@@ -18,7 +18,6 @@
 ```
 .
 ├── README.md
-├── start.py                 # не используется приложением
 └── test_vue
     ├── server               # backend API + миграции
     └── vue-project          # frontend SPA
@@ -47,6 +46,7 @@ Backend при старте автоматически применяет `schem
    ```bash
    cd test_vue/server
    npm install
+   npm install dotenv
    ```
 
 2. Создать файл `.env` (расположите рядом с `package.json`) со своими параметрами подключения к БД и портом сервера:
@@ -56,7 +56,7 @@ Backend при старте автоматически применяет `schem
    DB_HOST=localhost
    DB_PORT=3306
    DB_USER=root
-   DB_PASSWORD=12345gig
+   DB_PASSWORD=12345
    DB_NAME=agile
    DB_POOL_LIMIT=10
    ```

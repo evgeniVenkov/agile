@@ -94,6 +94,13 @@ const archiveData = reactive({
   range: null,
 })
 
+const collapsedColumns = reactive(
+  statusOptions.reduce((acc, status) => {
+    acc[status.value] = false
+    return acc
+  }, {})
+)
+
 const loadStories = async () => {
   isBoardLoading.value = true
   boardError.value = ''
@@ -342,6 +349,10 @@ const removeArchivedStory = async (archivedId) => {
     archiveError.value = error.message || 'Не удалось удалить архивацию.'
   }
 }
+
+const toggleColumn = (columnValue) => {
+  collapsedColumns[columnValue] = !collapsedColumns[columnValue]
+}
 </script>
 
 <template>
@@ -497,83 +508,94 @@ const removeArchivedStory = async (archivedId) => {
                   <p class="label">{{ column.label }}</p>
                   <p class="muted">{{ column.subtitle }}</p>
                 </div>
-                <div class="badge" :style="{ color: column.accent }">
-                  {{ column.stories.length }} · {{ column.estimate }} SP
+                <div class="column-actions">
+                  <div class="badge" :style="{ color: column.accent }">
+                    {{ column.stories.length }} · {{ column.estimate }} SP
+                  </div>
+                  <button class="collapse-btn" type="button" @click="toggleColumn(column.value)">
+                    {{ collapsedColumns[column.value] ? 'Развернуть' : 'Свернуть' }}
+                  </button>
                 </div>
               </div>
 
-              <p v-if="!column.stories.length" class="empty">Пока нет историй</p>
+              <p v-if="collapsedColumns[column.value]" class="empty collapsed">
+                Колонка свернута
+              </p>
 
-              <article v-for="story in column.stories" :key="story.id" class="story-card">
-                <div class="story-header">
-                  <div>
-                    <p class="story-title">{{ story.title }}</p>
-                    <p class="story-owner">Автор: {{ story.owner }}</p>
+              <div v-else>
+                <p v-if="!column.stories.length" class="empty">Пока нет историй</p>
+
+                <article v-for="story in column.stories" :key="story.id" class="story-card">
+                  <div class="story-header">
+                    <div>
+                      <p class="story-title">{{ story.title }}</p>
+                      <p class="story-owner">Автор: {{ story.owner }}</p>
+                    </div>
+                    <select
+                      :value="story.status"
+                      @change="updateStoryStatus(story.id, $event.target.value)"
+                    >
+                      <option
+                        v-for="status in statusOptions"
+                        :key="status.value"
+                        :value="status.value"
+                      >
+                        {{ status.label }}
+                      </option>
+                    </select>
                   </div>
-                  <select
-                    :value="story.status"
-                    @change="updateStoryStatus(story.id, $event.target.value)"
-                  >
-                    <option
-                      v-for="status in statusOptions"
-                      :key="status.value"
-                      :value="status.value"
-                    >
-                      {{ status.label }}
-                    </option>
-                  </select>
-                </div>
-                <p class="story-description">{{ story.description }}</p>
-                <div class="story-meta">
-                  <span class="tag">{{ story.estimate }} SP</span>
-                  <span class="tag secondary">
-                    Задач: {{ story.tasks.length }} · Завершено:
-                    {{ story.tasks.filter((task) => task.done).length }}
-                  </span>
-                </div>
-                <div class="story-actions">
-                  <button
-                    class="ghost-btn"
-                    type="button"
-                    :disabled="story.status !== 'done'"
-                    @click="archiveStory(story.id)"
-                  >
-                    В архив
-                  </button>
-                  <button class="ghost-btn danger" type="button" @click="removeStory(story.id)">
-                    Удалить
-                  </button>
-                </div>
-
-                <ul class="tasks">
-                  <li v-for="task in story.tasks" :key="task.id">
-                    <label>
-                      <input
-                        :checked="task.done"
-                        type="checkbox"
-                        @change="toggleTask(story.id, task.id)"
-                      />
-                      <span :class="{ done: task.done }">{{ task.title }}</span>
-                    </label>
+                  <p class="story-description">{{ story.description }}</p>
+                  <div class="story-meta">
+                    <span class="tag">{{ story.estimate }} SP</span>
+                    <span class="tag secondary">
+                      Задач: {{ story.tasks.length }} · Завершено:
+                      {{ story.tasks.filter((task) => task.done).length }}
+                    </span>
+                  </div>
+                  <div class="story-actions">
                     <button
-                      class="task-remove"
+                      class="ghost-btn"
                       type="button"
-                      @click="removeTask(story.id, task.id)"
+                      :disabled="story.status !== 'done'"
+                      @click="archiveStory(story.id)"
                     >
-                      ✕
+                      В архив
                     </button>
-                  </li>
-                </ul>
+                    <button class="ghost-btn danger" type="button" @click="removeStory(story.id)">
+                      Удалить
+                    </button>
+                  </div>
 
-                <div class="task-adder">
-                  <input
-                    v-model="taskDrafts[story.id]"
-                    placeholder="Новая задача"
-                    @keyup.enter.prevent="addTaskToStory(story.id)"
-                  />
-                  <button type="button" @click="addTaskToStory(story.id)">Добавить</button>
-                </div>
-              </article>
+                  <ul class="tasks">
+                    <li v-for="task in story.tasks" :key="task.id">
+                      <label>
+                        <input
+                          :checked="task.done"
+                          type="checkbox"
+                          @change="toggleTask(story.id, task.id)"
+                        />
+                        <span :class="{ done: task.done }">{{ task.title }}</span>
+                      </label>
+                      <button
+                        class="task-remove"
+                        type="button"
+                        @click="removeTask(story.id, task.id)"
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  </ul>
+
+                  <div class="task-adder">
+                    <input
+                      v-model="taskDrafts[story.id]"
+                      placeholder="Новая задача"
+                      @keyup.enter.prevent="addTaskToStory(story.id)"
+                    />
+                    <button type="button" @click="addTaskToStory(story.id)">Добавить</button>
+                  </div>
+                </article>
+              </div>
             </div>
           </div>
         </div>
@@ -922,6 +944,12 @@ textarea {
   margin-bottom: 16px;
 }
 
+.column-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .label {
   font-weight: 600;
 }
@@ -938,10 +966,25 @@ textarea {
   background: rgba(99, 102, 241, 0.08);
 }
 
+.collapse-btn {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 6px 12px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #475467;
+}
+
 .empty {
   text-align: center;
   color: #94a3b8;
   padding: 24px;
+}
+
+.empty.collapsed {
+  font-style: italic;
+  padding: 12px;
 }
 
 .story-card {
