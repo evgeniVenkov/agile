@@ -1,0 +1,40 @@
+CREATE TABLE IF NOT EXISTS users (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(60) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS stories (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  description TEXT NOT NULL,
+  estimate INT UNSIGNED NOT NULL DEFAULT 1,
+  status ENUM('backlog', 'ready', 'in-progress', 'done') NOT NULL DEFAULT 'backlog',
+  owner_id INT UNSIGNED NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_story_owner FOREIGN KEY (owner_id) REFERENCES users (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS story_tasks (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  story_id INT UNSIGNED NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  done TINYINT(1) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_task_story FOREIGN KEY (story_id) REFERENCES stories (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS archived_stories (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  original_story_id INT UNSIGNED NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  description TEXT NOT NULL,
+  estimate INT UNSIGNED NOT NULL,
+  status ENUM('backlog', 'ready', 'in-progress', 'done') NOT NULL,
+  owner_id INT UNSIGNED,
+  owner_name VARCHAR(60),
+  tasks_json JSON NOT NULL,
+  completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
