@@ -6,6 +6,7 @@ import {
   fetchStories,
   createStory,
   updateStoryStatus as updateStoryStatusApi,
+  updateStoryEstimate as updateStoryEstimateApi,
   addTask as addTaskApi,
   updateTaskState,
   deleteTask as deleteTaskApi,
@@ -67,6 +68,9 @@ const storyForm = reactive({
   status: 'backlog',
 })
 const taskDrafts = reactive({})
+const isPanelCollapsed = ref(false)
+const editingEstimate = ref(null)
+const estimateDrafts = reactive({})
 
 const authError = ref('')
 const registerError = ref('')
@@ -254,8 +258,8 @@ const addStory = async () => {
   const description = storyForm.description.trim()
   const estimate = Number(storyForm.estimate)
 
-  if (!title || !description) {
-    storyError.value = 'Заполните название и описание.'
+  if (!title) {
+    storyError.value = 'Заполните название истории.'
     return
   }
 
@@ -283,6 +287,33 @@ const updateStoryStatus = async (storyId, status) => {
     await loadStories()
   } catch (error) {
     boardError.value = error.message || 'Не удалось обновить статус.'
+  }
+}
+
+const startEditingEstimate = (storyId, currentEstimate) => {
+  editingEstimate.value = storyId
+  estimateDrafts[storyId] = currentEstimate
+}
+
+const cancelEditingEstimate = (storyId) => {
+  editingEstimate.value = null
+  delete estimateDrafts[storyId]
+}
+
+const saveEstimate = async (storyId) => {
+  const newEstimate = Number(estimateDrafts[storyId])
+  if (!Number.isFinite(newEstimate) || newEstimate < 1) {
+    boardError.value = 'Оценка должна быть числом от 1 и выше.'
+    return
+  }
+
+  try {
+    await updateStoryEstimateApi(storyId, newEstimate)
+    editingEstimate.value = null
+    delete estimateDrafts[storyId]
+    await loadStories()
+  } catch (error) {
+    boardError.value = error.message || 'Не удалось обновить оценку.'
   }
 }
 
@@ -462,19 +493,29 @@ const toggleColumn = (columnValue) => {
         <p v-if="infoMessage" class="info">{{ infoMessage }}</p>
 
         <div class="grid">
-          <div class="panel">
-            <h2>Новая пользовательская история</h2>
-            <form class="story-form" @submit.prevent="addStory">
+          <div class="panel" :class="{ collapsed: isPanelCollapsed }">
+            <div class="panel-header">
+              <h2>Новая пользовательская история</h2>
+              <button
+                class="collapse-btn"
+                type="button"
+                @click="isPanelCollapsed = !isPanelCollapsed"
+                :aria-label="isPanelCollapsed ? 'Развернуть' : 'Свернуть'"
+              >
+                {{ isPanelCollapsed ? '▼' : '▲' }}
+              </button>
+            </div>
+            <form v-show="!isPanelCollapsed" class="story-form" @submit.prevent="addStory">
               <label>
                 Название
                 <input v-model="storyForm.title" placeholder="Как пользователь, я хочу..." />
               </label>
               <label>
-                Описание
+                Описание <span class="optional">(необязательно)</span>
                 <textarea
                   v-model="storyForm.description"
                   rows="4"
-                  placeholder="Кратко опишите ценность и критерии"
+                  placeholder="Кратко опишите ценность и критерии (необязательно)"
                 />
               </label>
               <div class="inline">
@@ -496,7 +537,7 @@ const toggleColumn = (columnValue) => {
             </form>
           </div>
 
-          <div class="board">
+          <div class="board" :class="{ 'panel-expanded': !isPanelCollapsed }">
             <div
               v-for="column in boardColumns"
               :key="column.value"
@@ -546,7 +587,43 @@ const toggleColumn = (columnValue) => {
                   </div>
                   <p class="story-description">{{ story.description }}</p>
                   <div class="story-meta">
-                    <span class="tag">{{ story.estimate }} SP</span>
+                    <span
+                      v-if="editingEstimate !== story.id"
+                      class="tag editable"
+                      @click="startEditingEstimate(story.id, story.estimate)"
+                      title="Нажмите, чтобы изменить оценку"
+                    >
+                      {{ story.estimate }} SP
+                    </span>
+                    <div v-else class="estimate-editor">
+                      <input
+                        v-model.number="estimateDrafts[story.id]"
+                        type="number"
+                        min="1"
+                        class="estimate-input"
+                        @keyup.enter="saveEstimate(story.id)"
+                        @keyup.esc="cancelEditingEstimate(story.id)"
+                        @blur="saveEstimate(story.id)"
+                        autofocus
+                      />
+                      <span class="estimate-label">SP</span>
+                      <button
+                        class="estimate-save"
+                        type="button"
+                        @click="saveEstimate(story.id)"
+                        title="Сохранить"
+                      >
+                        ✓
+                      </button>
+                      <button
+                        class="estimate-cancel"
+                        type="button"
+                        @click="cancelEditingEstimate(story.id)"
+                        title="Отмена"
+                      >
+                        ✕
+                      </button>
+                    </div>
                     <span class="tag secondary">
                       Задач: {{ story.tasks.length }} · Завершено:
                       {{ story.tasks.filter((task) => task.done).length }}
@@ -792,6 +869,12 @@ label {
   color: #475467;
 }
 
+.optional {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  font-weight: normal;
+}
+
 input,
 textarea,
 select {
@@ -913,6 +996,29 @@ textarea {
   align-self: start;
 }
 
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.panel-header h2 {
+  margin: 0;
+  flex: 1;
+}
+
+.collapse-btn {
+  border: none;
+  background: transparent;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  color: #6366f1;
+  line-height: 1;
+  transition: transform 0.2s ease;
+}
+
 .story-form {
   display: flex;
   flex-direction: column;
@@ -1009,11 +1115,14 @@ textarea {
 }
 
 .story-header select {
+  width: 140px;
   min-width: 140px;
+  max-width: 140px;
   padding: 6px 10px;
   border-radius: 10px;
   border: 1px solid #cbd5f5;
   font-size: 0.85rem;
+  flex-shrink: 0;
 }
 
 .story-title {
@@ -1036,6 +1145,62 @@ textarea {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
+}
+
+.tag.editable {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.tag.editable:hover {
+  background: #e2e8f0;
+}
+
+.estimate-editor {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  border: 1px solid #cbd5f5;
+}
+
+.estimate-input {
+  width: 50px;
+  padding: 2px 6px;
+  border: 1px solid #cbd5f5;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.estimate-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #475467;
+}
+
+.estimate-save,
+.estimate-cancel {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 0.9rem;
+  line-height: 1;
+  color: #6366f1;
+  transition: color 0.2s ease;
+}
+
+.estimate-save:hover {
+  color: #22c55e;
+}
+
+.estimate-cancel:hover {
+  color: #ef4444;
 }
 
 .story-actions {
@@ -1141,14 +1306,78 @@ textarea {
 }
 
 @media (max-width: 960px) {
+  .workspace {
+    position: relative;
+    overflow-x: hidden;
+  }
+
   .grid {
     grid-template-columns: 1fr;
+    position: relative;
   }
 
   .panel {
-    position: sticky;
+    position: fixed;
     top: 0;
-    z-index: 2;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: #fff;
+    box-shadow: 0 4px 20px rgba(15, 23, 42, 0.15);
+    margin: 0;
+    border-radius: 0 0 20px 20px;
+    padding: 8px 12px;
+    max-height: auto;
+    overflow: visible;
+  }
+
+  .panel.collapsed {
+    max-height: 50px;
+    overflow: hidden;
+  }
+
+  .panel-header {
+    margin-bottom: 8px;
+  }
+
+  .panel-header h2 {
+    font-size: 1rem;
+  }
+
+  .story-form {
+    gap: 10px;
+  }
+
+  .story-form label {
+    font-size: 0.8rem;
+    gap: 4px;
+  }
+
+  .story-form input,
+  .story-form textarea,
+  .story-form select {
+    padding: 6px 8px;
+    font-size: 0.85rem;
+  }
+
+  .story-form textarea {
+    min-height: 60px;
+    max-height: 100px;
+  }
+
+  .story-form .inline {
+    gap: 10px;
+  }
+
+  .grid > .board {
+    margin-top: 0;
+    padding-top: 60px;
+    min-height: 100vh;
+    transition: padding-top 0.3s ease;
+  }
+
+  .grid > .board.panel-expanded {
+    padding-top: 280px;
   }
 }
 

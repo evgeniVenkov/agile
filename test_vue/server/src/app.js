@@ -133,19 +133,20 @@ app.get('/api/stories', async (_req, res) => {
 
 app.post('/api/stories', async (req, res) => {
   try {
-    const { title, description, estimate = 1, status = 'backlog', ownerId } = req.body ?? {}
+    const { title, description = '', estimate = 1, status = 'backlog', ownerId } = req.body ?? {}
     if (!ownerId) {
       return res.status(401).json({ message: 'ownerId required' })
     }
-    if (!title || !description) {
-      return res.status(400).json({ message: 'title and description required' })
+    if (!title) {
+      return res.status(400).json({ message: 'title required' })
     }
     const normalizedEstimate = Number.isFinite(Number(estimate)) ? Math.max(1, Number(estimate)) : 1
+    const normalizedDescription = description?.trim() || ''
 
     const [result] = await pool.query(
       `INSERT INTO stories (title, description, estimate, status, owner_id)
        VALUES (?, ?, ?, ?, ?)`,
-      [title, description, normalizedEstimate, status, ownerId]
+      [title, normalizedDescription, normalizedEstimate, status, ownerId]
     )
 
     return res
@@ -160,13 +161,37 @@ app.post('/api/stories', async (req, res) => {
 app.patch('/api/stories/:id', async (req, res) => {
   try {
     const { id } = req.params
-    const { status } = req.body ?? {}
-    if (!['backlog', 'ready', 'in-progress', 'done'].includes(status)) {
-      return res.status(400).json({ message: 'invalid status' })
+    const { status, estimate } = req.body ?? {}
+    
+    const updates = []
+    const values = []
+    
+    if (status !== undefined) {
+      if (!['backlog', 'ready', 'in-progress', 'done'].includes(status)) {
+        return res.status(400).json({ message: 'invalid status' })
+      }
+      updates.push('status = ?')
+      values.push(status)
     }
-
-    await pool.query('UPDATE stories SET status = ? WHERE id = ?', [status, id])
-    return res.json({ id: Number(id), status })
+    
+    if (estimate !== undefined) {
+      const normalizedEstimate = Number.isFinite(Number(estimate)) ? Math.max(1, Number(estimate)) : 1
+      updates.push('estimate = ?')
+      values.push(normalizedEstimate)
+    }
+    
+    if (updates.length === 0) {
+      return res.status(400).json({ message: 'no fields to update' })
+    }
+    
+    values.push(id)
+    await pool.query(`UPDATE stories SET ${updates.join(', ')} WHERE id = ?`, values)
+    
+    const result = { id: Number(id) }
+    if (status !== undefined) result.status = status
+    if (estimate !== undefined) result.estimate = Number.isFinite(Number(estimate)) ? Math.max(1, Number(estimate)) : 1
+    
+    return res.json(result)
   } catch (error) {
     console.error('[stories:update]', error)
     return res.status(500).json({ message: 'internal error' })

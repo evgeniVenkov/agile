@@ -30,6 +30,9 @@ export const createStory = (payload) =>
 export const updateStoryStatus = (id, status) =>
   request(`/api/stories/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) })
 
+export const updateStoryEstimate = (id, estimate) =>
+  request(`/api/stories/${id}`, { method: 'PATCH', body: JSON.stringify({ estimate }) })
+
 export const addTask = (storyId, title) =>
   request(`/api/stories/${storyId}/tasks`, { method: 'POST', body: JSON.stringify({ title }) })
 
