@@ -27,11 +27,11 @@ export const fetchStories = () => request('/api/stories')
 export const createStory = (payload) =>
   request('/api/stories', { method: 'POST', body: JSON.stringify(payload) })
 
-export const updateStoryStatus = (id, status) =>
-  request(`/api/stories/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) })
+export const updateStoryStatus = (id, status, userId) =>
+  request(`/api/stories/${id}`, { method: 'PATCH', body: JSON.stringify({ status, userId }) })
 
-export const updateStoryEstimate = (id, estimate) =>
-  request(`/api/stories/${id}`, { method: 'PATCH', body: JSON.stringify({ estimate }) })
+export const updateStoryEstimate = (id, estimate, userId) =>
+  request(`/api/stories/${id}`, { method: 'PATCH', body: JSON.stringify({ estimate, userId }) })
 
 export const addTask = (storyId, title) =>
   request(`/api/stories/${storyId}/tasks`, { method: 'POST', body: JSON.stringify({ title }) })
@@ -45,14 +45,17 @@ export const updateTaskState = (storyId, taskId, done) =>
 export const deleteTask = (storyId, taskId) =>
   request(`/api/stories/${storyId}/tasks/${taskId}`, { method: 'DELETE' })
 
-export const deleteStory = (id) => request(`/api/stories/${id}`, { method: 'DELETE' })
+export const deleteStory = (id, userId) =>
+  request(`/api/stories/${id}`, { method: 'DELETE', body: JSON.stringify({ userId }) })
 
-export const completeStory = (id) => request(`/api/stories/${id}/complete`, { method: 'POST' })
+export const completeStory = (id, userId) =>
+  request(`/api/stories/${id}/complete`, { method: 'POST', body: JSON.stringify({ userId }) })
 
 export const fetchArchiveAnalytics = (params = {}) => {
   const query = new URLSearchParams()
   if (params.from) query.set('from', params.from)
   if (params.to) query.set('to', params.to)
+  if (params.userId) query.set('userId', params.userId)
   const suffix = query.toString() ? `?${query.toString()}` : ''
   return request(`/api/analytics/archive${suffix}`)
 }

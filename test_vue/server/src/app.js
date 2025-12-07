@@ -46,14 +46,60 @@ const parseDateParam = (value) => {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
+const getUserRole = async (userId) => {
+  if (!userId) return null
+  try {
+    const [users] = await pool.query('SELECT role FROM users WHERE id = ?', [userId])
+    return users.length ? (users[0].role || 'developer') : null
+  } catch {
+    return null
+  }
+}
+
+const hasPermission = (userRole, requiredRoles) => {
+  if (!userRole) return false
+  if (userRole === 'admin') return true
+  return requiredRoles.includes(userRole)
+}
+
+const canModifyStory = async (userId, storyId, action = 'edit') => {
+  const userRole = await getUserRole(userId)
+  if (!userRole) return false
+  
+  // Admin can do everything
+  if (userRole === 'admin') return true
+  
+  // Manager can delete/archive any story
+  if (action === 'delete' || action === 'archive') {
+    return hasPermission(userRole, ['manager', 'admin'])
+  }
+  
+  // For edit/update, check if user owns the story or is manager/admin
+  if (action === 'edit' || action === 'update') {
+    if (hasPermission(userRole, ['manager', 'admin'])) return true
+    try {
+      const [stories] = await pool.query('SELECT owner_id FROM stories WHERE id = ?', [storyId])
+      if (!stories.length) return false
+      return stories[0].owner_id === Number(userId)
+    } catch {
+      return false
+    }
+  }
+  
+  return false
+}
+
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { username, password } = req.body ?? {}
+    const { username, password, role = 'developer' } = req.body ?? {}
     if (!username || !password) {
       return res.status(400).json({ message: 'username and password are required' })
     }
     if (password.length < 6) {
       return res.status(400).json({ message: 'password must be at least 6 characters' })
+    }
+    if (!['developer', 'manager', 'admin'].includes(role)) {
+      return res.status(400).json({ message: 'invalid role' })
     }
 
     const [existing] = await pool.query('SELECT id FROM users WHERE username = ?', [username])
@@ -63,11 +109,11 @@ app.post('/api/auth/register', async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 10)
     const [result] = await pool.query(
-      'INSERT INTO users (username, password_hash) VALUES (?, ?)',
-      [username, passwordHash]
+      'INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)',
+      [username, passwordHash, role]
     )
 
-    return res.status(201).json({ id: result.insertId, username })
+    return res.status(201).json({ id: result.insertId, username, role })
   } catch (error) {
     console.error('[register]', error)
     return res.status(500).json({ message: 'internal error' })
@@ -81,7 +127,7 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ message: 'username and password are required' })
     }
 
-    const [users] = await pool.query('SELECT id, password_hash FROM users WHERE username = ?', [
+    const [users] = await pool.query('SELECT id, password_hash, role FROM users WHERE username = ?', [
       username,
     ])
 
@@ -95,7 +141,7 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ message: 'invalid credentials' })
     }
 
-    return res.json({ id: user.id, username })
+    return res.json({ id: user.id, username, role: user.role || 'developer' })
   } catch (error) {
     console.error('[login]', error)
     return res.status(500).json({ message: 'internal error' })
@@ -161,7 +207,14 @@ app.post('/api/stories', async (req, res) => {
 app.patch('/api/stories/:id', async (req, res) => {
   try {
     const { id } = req.params
-    const { status, estimate } = req.body ?? {}
+    const { status, estimate, userId } = req.body ?? {}
+    
+    if (userId) {
+      const canUpdate = await canModifyStory(userId, id, 'update')
+      if (!canUpdate) {
+        return res.status(403).json({ message: 'insufficient permissions' })
+      }
+    }
     
     const updates = []
     const values = []
@@ -263,6 +316,17 @@ app.delete('/api/stories/:storyId/tasks/:taskId', async (req, res) => {
 app.delete('/api/stories/:id', async (req, res) => {
   try {
     const { id } = req.params
+    const { userId } = req.body ?? {}
+    
+    if (!userId) {
+      return res.status(401).json({ message: 'userId required' })
+    }
+    
+    const canDelete = await canModifyStory(userId, id, 'delete')
+    if (!canDelete) {
+      return res.status(403).json({ message: 'insufficient permissions' })
+    }
+    
     const [result] = await pool.query('DELETE FROM stories WHERE id = ?', [id])
     if (!result.affectedRows) {
       return res.status(404).json({ message: 'story not found' })
@@ -277,6 +341,16 @@ app.delete('/api/stories/:id', async (req, res) => {
 app.post('/api/stories/:id/complete', async (req, res) => {
   try {
     const { id } = req.params
+    const { userId } = req.body ?? {}
+    
+    if (!userId) {
+      return res.status(401).json({ message: 'userId required' })
+    }
+    
+    const canArchive = await canModifyStory(userId, id, 'archive')
+    if (!canArchive) {
+      return res.status(403).json({ message: 'insufficient permissions' })
+    }
     const [rows] = await pool.query(
       `SELECT
         s.id AS story_id,
@@ -331,6 +405,14 @@ app.post('/api/stories/:id/complete', async (req, res) => {
 
 app.get('/api/analytics/archive', async (req, res) => {
   try {
+    const { userId } = req.query
+    if (userId) {
+      const userRole = await getUserRole(userId)
+      if (!hasPermission(userRole, ['manager', 'admin'])) {
+        return res.status(403).json({ message: 'insufficient permissions' })
+      }
+    }
+    
     const now = new Date()
     let toDate = parseDateParam(req.query.to) ?? now
     let fromDate =

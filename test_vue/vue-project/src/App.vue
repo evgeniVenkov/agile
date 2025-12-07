@@ -60,7 +60,7 @@ const currentUser = ref(readSession())
 const currentPage = ref('board')
 const authMode = ref('login')
 const loginForm = reactive({ username: '', password: '' })
-const registerForm = reactive({ username: '', password: '' })
+const registerForm = reactive({ username: '', password: '', role: 'developer' })
 const storyForm = reactive({
   title: '',
   description: '',
@@ -131,7 +131,11 @@ const loadArchiveAnalytics = async () => {
       from = archiveFilters.from
       to = archiveFilters.to
     }
-    const data = await fetchArchiveAnalytics({ from, to })
+    const data = await fetchArchiveAnalytics({
+      from,
+      to,
+      userId: currentUser.value?.id,
+    })
     archiveData.summary = data.summary
     archiveData.velocity = data.velocity
     archiveData.stories = data.stories
@@ -187,6 +191,26 @@ const analytics = computed(() => {
   }
 })
 
+const userRole = computed(() => currentUser.value?.role || 'developer')
+
+const canDeleteStory = computed(() => {
+  return ['manager', 'admin'].includes(userRole.value)
+})
+
+const canArchiveStory = computed(() => {
+  return ['manager', 'admin'].includes(userRole.value)
+})
+
+const canViewAnalytics = computed(() => {
+  return ['manager', 'admin'].includes(userRole.value)
+})
+
+const canEditStory = (story) => {
+  if (!currentUser.value) return false
+  if (['manager', 'admin'].includes(userRole.value)) return true
+  return story.ownerId === currentUser.value.id
+}
+
 const resetErrors = () => {
   authError.value = ''
   registerError.value = ''
@@ -210,9 +234,10 @@ const handleRegister = async () => {
   }
 
   try {
-    await registerUser({ username, password })
+    await registerUser({ username, password, role: registerForm.role })
     registerForm.username = ''
     registerForm.password = ''
+    registerForm.role = 'developer'
     infoMessage.value = 'Аккаунт создан. Теперь можно войти.'
     authMode.value = 'login'
     loginForm.username = username
@@ -282,8 +307,9 @@ const addStory = async () => {
 }
 
 const updateStoryStatus = async (storyId, status) => {
+  if (!currentUser.value) return
   try {
-    await updateStoryStatusApi(storyId, status)
+    await updateStoryStatusApi(storyId, status, currentUser.value.id)
     await loadStories()
   } catch (error) {
     boardError.value = error.message || 'Не удалось обновить статус.'
@@ -301,6 +327,7 @@ const cancelEditingEstimate = (storyId) => {
 }
 
 const saveEstimate = async (storyId) => {
+  if (!currentUser.value) return
   const newEstimate = Number(estimateDrafts[storyId])
   if (!Number.isFinite(newEstimate) || newEstimate < 1) {
     boardError.value = 'Оценка должна быть числом от 1 и выше.'
@@ -308,7 +335,7 @@ const saveEstimate = async (storyId) => {
   }
 
   try {
-    await updateStoryEstimateApi(storyId, newEstimate)
+    await updateStoryEstimateApi(storyId, newEstimate, currentUser.value.id)
     editingEstimate.value = null
     delete estimateDrafts[storyId]
     await loadStories()
@@ -353,8 +380,9 @@ const removeTask = async (storyId, taskId) => {
 }
 
 const removeStory = async (storyId) => {
+  if (!currentUser.value) return
   try {
-    await deleteStoryApi(storyId)
+    await deleteStoryApi(storyId, currentUser.value.id)
     await loadStories()
   } catch (error) {
     boardError.value = error.message || 'Не удалось удалить историю.'
@@ -362,8 +390,9 @@ const removeStory = async (storyId) => {
 }
 
 const archiveStory = async (storyId) => {
+  if (!currentUser.value) return
   try {
-    await completeStoryApi(storyId)
+    await completeStoryApi(storyId, currentUser.value.id)
     await loadStories()
     await loadArchiveAnalytics()
     infoMessage.value = 'История отправлена в архив.'
@@ -447,6 +476,14 @@ const toggleColumn = (columnValue) => {
             Пароль
             <input v-model="registerForm.password" type="password" placeholder="минимум 6 символов" />
           </label>
+          <label>
+            Роль
+            <select v-model="registerForm.role">
+              <option value="developer">Разработчик</option>
+              <option value="manager">Руководитель</option>
+              <option value="admin">Администратор</option>
+            </select>
+          </label>
           <button class="primary" type="submit">Создать аккаунт</button>
           <p v-if="registerError" class="error">{{ registerError }}</p>
         </form>
@@ -464,6 +501,7 @@ const toggleColumn = (columnValue) => {
           Бэклог и спринт
         </button>
         <button
+          v-if="canViewAnalytics"
           class="tab"
           :class="{ active: currentPage === 'archive' }"
           type="button"
@@ -629,8 +667,9 @@ const toggleColumn = (columnValue) => {
                       {{ story.tasks.filter((task) => task.done).length }}
                     </span>
                   </div>
-                  <div class="story-actions">
+                  <div v-if="canArchiveStory || canDeleteStory" class="story-actions">
                     <button
+                      v-if="canArchiveStory"
                       class="ghost-btn"
                       type="button"
                       :disabled="story.status !== 'done'"
@@ -638,7 +677,12 @@ const toggleColumn = (columnValue) => {
                     >
                       В архив
                     </button>
-                    <button class="ghost-btn danger" type="button" @click="removeStory(story.id)">
+                    <button
+                      v-if="canDeleteStory"
+                      class="ghost-btn danger"
+                      type="button"
+                      @click="removeStory(story.id)"
+                    >
                       Удалить
                     </button>
                   </div>
