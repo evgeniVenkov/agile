@@ -207,7 +207,7 @@ app.post('/api/stories', async (req, res) => {
 app.patch('/api/stories/:id', async (req, res) => {
   try {
     const { id } = req.params
-    const { status, estimate, userId } = req.body ?? {}
+    const { status, estimate, userId, title, description } = req.body ?? {}
     
     if (userId) {
       const canUpdate = await canModifyStory(userId, id, 'update')
@@ -232,6 +232,21 @@ app.patch('/api/stories/:id', async (req, res) => {
       updates.push('estimate = ?')
       values.push(normalizedEstimate)
     }
+
+    if (title !== undefined) {
+      const normalizedTitle = String(title ?? '').trim()
+      if (!normalizedTitle) {
+        return res.status(400).json({ message: 'title required' })
+      }
+      updates.push('title = ?')
+      values.push(normalizedTitle)
+    }
+
+    if (description !== undefined) {
+      const normalizedDescription = String(description ?? '').trim()
+      updates.push('description = ?')
+      values.push(normalizedDescription)
+    }
     
     if (updates.length === 0) {
       return res.status(400).json({ message: 'no fields to update' })
@@ -240,11 +255,23 @@ app.patch('/api/stories/:id', async (req, res) => {
     values.push(id)
     await pool.query(`UPDATE stories SET ${updates.join(', ')} WHERE id = ?`, values)
     
-    const result = { id: Number(id) }
-    if (status !== undefined) result.status = status
-    if (estimate !== undefined) result.estimate = Number.isFinite(Number(estimate)) ? Math.max(1, Number(estimate)) : 1
-    
-    return res.json(result)
+    const [rows] = await pool.query(
+      `SELECT id, title, description, estimate, status, owner_id FROM stories WHERE id = ?`,
+      [id]
+    )
+    if (!rows.length) {
+      return res.status(404).json({ message: 'story not found' })
+    }
+
+    const story = rows[0]
+    return res.json({
+      id: story.id,
+      title: story.title,
+      description: story.description,
+      estimate: Number(story.estimate ?? 0),
+      status: story.status,
+      ownerId: story.owner_id,
+    })
   } catch (error) {
     console.error('[stories:update]', error)
     return res.status(500).json({ message: 'internal error' })
@@ -519,6 +546,68 @@ app.get('/api/analytics/archive', async (req, res) => {
     })
   } catch (error) {
     console.error('[analytics:archive]', error)
+    return res.status(500).json({ message: 'internal error' })
+  }
+})
+
+app.patch('/api/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { userId, password, role } = req.body ?? {}
+
+    if (!userId) {
+      return res.status(401).json({ message: 'userId required' })
+    }
+
+    const requesterRole = await getUserRole(userId)
+    if (!requesterRole) {
+      return res.status(401).json({ message: 'invalid user' })
+    }
+
+    const isSelf = Number(userId) === Number(id)
+    if (!isSelf && requesterRole !== 'admin') {
+      return res.status(403).json({ message: 'insufficient permissions' })
+    }
+
+    const updates = []
+    const values = []
+
+    if (password !== undefined) {
+      if (typeof password !== 'string' || password.trim().length < 6) {
+        return res.status(400).json({ message: 'password must be at least 6 characters' })
+      }
+      const passwordHash = await bcrypt.hash(password.trim(), 10)
+      updates.push('password_hash = ?')
+      values.push(passwordHash)
+    }
+
+    if (role !== undefined) {
+      if (!['developer', 'manager', 'admin'].includes(role)) {
+        return res.status(400).json({ message: 'invalid role' })
+      }
+      updates.push('role = ?')
+      values.push(role)
+    }
+
+    if (!updates.length) {
+      return res.status(400).json({ message: 'no fields to update' })
+    }
+
+    values.push(id)
+    const [result] = await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, values)
+    if (!result.affectedRows) {
+      return res.status(404).json({ message: 'user not found' })
+    }
+
+    const [rows] = await pool.query('SELECT id, username, role FROM users WHERE id = ?', [id])
+    if (!rows.length) {
+      return res.status(404).json({ message: 'user not found' })
+    }
+
+    const user = rows[0]
+    return res.json({ id: user.id, username: user.username, role: user.role || 'developer' })
+  } catch (error) {
+    console.error('[users:update]', error)
     return res.status(500).json({ message: 'internal error' })
   }
 })

@@ -33,6 +33,9 @@ export const updateStoryStatus = (id, status, userId) =>
 export const updateStoryEstimate = (id, estimate, userId) =>
   request(`/api/stories/${id}`, { method: 'PATCH', body: JSON.stringify({ estimate, userId }) })
 
+export const updateStory = (id, payload) =>
+  request(`/api/stories/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+
 export const addTask = (storyId, title) =>
   request(`/api/stories/${storyId}/tasks`, { method: 'POST', body: JSON.stringify({ title }) })
 
@@ -64,3 +67,6 @@ export const deleteArchivedStory = (id) =>
   request(`/api/archive/${id}`, {
     method: 'DELETE',
   })
+
+export const updateUserSettings = (id, payload) =>
+  request(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })

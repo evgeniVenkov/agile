@@ -14,6 +14,8 @@ import {
   completeStory as completeStoryApi,
   fetchArchiveAnalytics,
   deleteArchivedStory,
+  updateUserSettings,
+  updateStory,
 } from './services/api'
 
 const SESSION_KEY = 'agile-session'
@@ -71,6 +73,14 @@ const taskDrafts = reactive({})
 const isPanelCollapsed = ref(false)
 const editingEstimate = ref(null)
 const estimateDrafts = reactive({})
+const editingStoryId = ref(null)
+const storyDrafts = reactive({})
+const settingsForm = reactive({
+  password: '',
+  role: 'developer',
+})
+const showLoginPassword = ref(false)
+const showSettingsPassword = ref(false)
 
 const authError = ref('')
 const registerError = ref('')
@@ -78,6 +88,8 @@ const storyError = ref('')
 const infoMessage = ref('')
 const boardError = ref('')
 const archiveError = ref('')
+const settingsError = ref('')
+const settingsSuccess = ref('')
 const isBoardLoading = ref(false)
 const isArchiveLoading = ref(false)
 
@@ -100,7 +112,8 @@ const archiveData = reactive({
 
 const collapsedColumns = reactive(
   statusOptions.reduce((acc, status) => {
-    acc[status.value] = false
+    // по умолчанию все колонки свернуты
+    acc[status.value] = true
     return acc
   }, {})
 )
@@ -154,6 +167,8 @@ onMounted(() => {
 
 watch(currentUser, (value) => {
   persistSession(value)
+  settingsForm.role = value?.role || 'developer'
+  settingsForm.password = ''
 })
 
 watch(
@@ -192,6 +207,18 @@ const analytics = computed(() => {
 })
 
 const userRole = computed(() => currentUser.value?.role || 'developer')
+
+const userRoleLabel = computed(() => {
+  switch (userRole.value) {
+    case 'manager':
+      return 'Руководитель'
+    case 'admin':
+      return 'Администратор'
+    case 'developer':
+    default:
+      return 'Разработчик'
+  }
+})
 
 const canDeleteStory = computed(() => {
   return ['manager', 'admin'].includes(userRole.value)
@@ -272,6 +299,39 @@ const logout = () => {
   currentUser.value = null
 }
 
+const saveSettings = async () => {
+  settingsError.value = ''
+  settingsSuccess.value = ''
+
+  if (!currentUser.value) {
+    settingsError.value = 'Нужно авторизоваться.'
+    return
+  }
+
+  const payload = {
+    userId: currentUser.value.id,
+    role: settingsForm.role,
+  }
+
+  const trimmedPassword = settingsForm.password.trim()
+  if (trimmedPassword) {
+    if (trimmedPassword.length < 6) {
+      settingsError.value = 'Пароль должен быть не короче 6 символов.'
+      return
+    }
+    payload.password = trimmedPassword
+  }
+
+  try {
+    const updated = await updateUserSettings(currentUser.value.id, payload)
+    currentUser.value = { ...currentUser.value, role: updated.role || currentUser.value.role }
+    settingsForm.password = ''
+    settingsSuccess.value = 'Настройки сохранены.'
+  } catch (error) {
+    settingsError.value = error.message || 'Не удалось сохранить настройки.'
+  }
+}
+
 const addStory = async () => {
   resetErrors()
   if (!currentUser.value) {
@@ -324,6 +384,48 @@ const startEditingEstimate = (storyId, currentEstimate) => {
 const cancelEditingEstimate = (storyId) => {
   editingEstimate.value = null
   delete estimateDrafts[storyId]
+}
+
+const startEditingStory = (story) => {
+  editingStoryId.value = story.id
+  storyDrafts[story.id] = {
+    title: story.title,
+    description: story.description,
+  }
+}
+
+const cancelEditingStory = (storyId) => {
+  if (editingStoryId.value === storyId) {
+    editingStoryId.value = null
+  }
+  delete storyDrafts[storyId]
+}
+
+const saveStory = async (storyId) => {
+  if (!currentUser.value) return
+  const draft = storyDrafts[storyId]
+  if (!draft) return
+
+  const title = draft.title?.trim()
+  const description = draft.description?.trim() ?? ''
+
+  if (!title) {
+    boardError.value = 'Заполните название истории.'
+    return
+  }
+
+  try {
+    await updateStory(storyId, {
+      title,
+      description,
+      userId: currentUser.value.id,
+    })
+    editingStoryId.value = null
+    delete storyDrafts[storyId]
+    await loadStories()
+  } catch (error) {
+    boardError.value = error.message || 'Не удалось сохранить историю.'
+  }
 }
 
 const saveEstimate = async (storyId) => {
@@ -427,7 +529,10 @@ const toggleColumn = (columnValue) => {
         </p>
       </div>
       <div v-if="currentUser" class="user-chip">
-        <span>{{ currentUser.username }}</span>
+        <div class="user-chip-info">
+          <span class="user-chip-name">{{ currentUser.username }}</span>
+          <span class="user-chip-role">{{ userRoleLabel }}</span>
+        </div>
         <button class="ghost" @click="logout">Выйти</button>
       </div>
     </header>
@@ -460,7 +565,21 @@ const toggleColumn = (columnValue) => {
           </label>
           <label>
             Пароль
-            <input v-model="loginForm.password" type="password" placeholder="••••••" />
+            <div class="password-field">
+              <input
+                v-model="loginForm.password"
+                :type="showLoginPassword ? 'text' : 'password'"
+                placeholder="••••••"
+              />
+              <button
+                type="button"
+                class="eye-btn"
+                :aria-label="showLoginPassword ? 'Скрыть пароль' : 'Показать пароль'"
+                @click="showLoginPassword = !showLoginPassword"
+              >
+                {{ showLoginPassword ? '🙈' : '👁️' }}
+              </button>
+            </div>
           </label>
           <button class="primary" type="submit">Войти</button>
           <p v-if="authError" class="error">{{ authError }}</p>
@@ -508,6 +627,14 @@ const toggleColumn = (columnValue) => {
           @click="currentPage = 'archive'"
         >
           Аналитика архива
+        </button>
+        <button
+          class="tab"
+          :class="{ active: currentPage === 'settings' }"
+          type="button"
+          @click="currentPage = 'settings'"
+        >
+          Настройки
         </button>
       </div>
 
@@ -607,8 +734,23 @@ const toggleColumn = (columnValue) => {
                 <article v-for="story in column.stories" :key="story.id" class="story-card">
                   <div class="story-header">
                     <div>
-                      <p class="story-title">{{ story.title }}</p>
-                      <p class="story-owner">Автор: {{ story.owner }}</p>
+                      <template v-if="editingStoryId === story.id">
+                        <input
+                          v-model="storyDrafts[story.id].title"
+                          class="story-edit-input"
+                          placeholder="Название истории"
+                        />
+                        <textarea
+                          v-model="storyDrafts[story.id].description"
+                          class="story-edit-textarea"
+                          rows="3"
+                          placeholder="Описание"
+                        />
+                      </template>
+                      <template v-else>
+                        <p class="story-title">{{ story.title }}</p>
+                        <p class="story-owner">Автор: {{ story.owner }}</p>
+                      </template>
                     </div>
                     <select
                       :value="story.status"
@@ -623,7 +765,7 @@ const toggleColumn = (columnValue) => {
                       </option>
                     </select>
                   </div>
-                  <p class="story-description">{{ story.description }}</p>
+                  <p v-if="editingStoryId !== story.id" class="story-description">{{ story.description }}</p>
                   <div class="story-meta">
                     <span
                       v-if="editingEstimate !== story.id"
@@ -685,6 +827,22 @@ const toggleColumn = (columnValue) => {
                     >
                       Удалить
                     </button>
+                    <button
+                      v-if="editingStoryId !== story.id && canEditStory(story)"
+                      class="ghost-btn"
+                      type="button"
+                      @click="startEditingStory(story)"
+                    >
+                      Редактировать
+                    </button>
+                    <template v-else-if="editingStoryId === story.id">
+                      <button class="ghost-btn" type="button" @click="saveStory(story.id)">
+                        Сохранить
+                      </button>
+                      <button class="ghost-btn" type="button" @click="cancelEditingStory(story.id)">
+                        Отмена
+                      </button>
+                    </template>
                   </div>
 
                   <ul class="tasks">
@@ -722,7 +880,7 @@ const toggleColumn = (columnValue) => {
         </div>
       </div>
 
-      <div v-else class="archive-view">
+      <div v-else-if="currentPage === 'archive'" class="archive-view">
         <div class="panel archive-panel">
           <h2>Аналитика архива</h2>
           <div class="filters">
@@ -807,6 +965,44 @@ const toggleColumn = (columnValue) => {
           </article>
         </div>
       </div>
+
+      <div v-else class="settings-view">
+        <div class="panel settings-panel">
+          <h2>Настройки профиля</h2>
+          <div class="settings-form">
+            <label>
+              Новый пароль
+              <div class="password-field">
+                <input
+                  v-model="settingsForm.password"
+                  :type="showSettingsPassword ? 'text' : 'password'"
+                  placeholder="минимум 6 символов"
+                />
+                <button
+                  type="button"
+                  class="eye-btn"
+                  :aria-label="showSettingsPassword ? 'Скрыть пароль' : 'Показать пароль'"
+                  @click="showSettingsPassword = !showSettingsPassword"
+                >
+                  {{ showSettingsPassword ? '🙈' : '👁️' }}
+                </button>
+              </div>
+              <span class="optional">Оставьте пустым, если не нужно менять пароль</span>
+            </label>
+            <label>
+              Роль
+              <select v-model="settingsForm.role">
+                <option value="developer">Разработчик</option>
+                <option value="manager">Руководитель</option>
+                <option value="admin">Администратор</option>
+              </select>
+            </label>
+            <button class="primary" type="button" @click="saveSettings">Сохранить</button>
+            <p v-if="settingsError" class="error">{{ settingsError }}</p>
+            <p v-if="settingsSuccess" class="info">{{ settingsSuccess }}</p>
+          </div>
+        </div>
+      </div>
     </section>
   </div>
 </template>
@@ -849,6 +1045,21 @@ const toggleColumn = (columnValue) => {
   border: 1px solid #e4e7ec;
   border-radius: 999px;
   background: #fff;
+}
+
+.user-chip-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.user-chip-name {
+  font-weight: 600;
+}
+
+.user-chip-role {
+  font-size: 0.8rem;
+  color: #64748b;
 }
 
 .ghost {
@@ -965,6 +1176,41 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 24px;
+}
+
+.settings-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-panel h2 {
+  margin-top: 0;
+}
+
+.password-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.password-field input {
+  flex: 1;
+}
+
+.eye-btn {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 0.95rem;
 }
 
 .archive-panel .filters {
@@ -1183,6 +1429,21 @@ textarea {
 .story-description {
   color: #475467;
   margin: 0;
+}
+
+.story-edit-input,
+.story-edit-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #cbd5f5;
+  font: inherit;
+  margin-bottom: 8px;
+}
+
+.story-edit-textarea {
+  resize: vertical;
 }
 
 .story-meta {
