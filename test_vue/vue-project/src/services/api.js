@@ -22,7 +22,10 @@ export const registerUser = (payload) =>
 export const loginUser = (payload) =>
   request('/api/auth/login', { method: 'POST', body: JSON.stringify(payload) })
 
-export const fetchProjects = () => request('/api/projects')
+export const fetchProjects = (userId) => {
+  const query = userId ? `?userId=${userId}` : ''
+  return request(`/api/projects${query}`)
+}
 
 export const createProject = (payload) =>
   request('/api/projects', { method: 'POST', body: JSON.stringify(payload) })
@@ -44,8 +47,11 @@ export const removeProjectMember = (projectId, userId, requesterUserId) =>
     body: JSON.stringify({ userId: requesterUserId }),
   })
 
-export const fetchStories = (projectId = null) => {
-  const query = projectId ? `?projectId=${projectId}` : ''
+export const fetchStories = (projectId = null, userId = null) => {
+  const params = new URLSearchParams()
+  if (projectId) params.set('projectId', projectId)
+  if (userId) params.set('userId', userId)
+  const query = params.toString() ? `?${params.toString()}` : ''
   return request(`/api/stories${query}`)
 }
 

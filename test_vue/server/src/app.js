@@ -50,7 +50,7 @@ const getUserRole = async (userId) => {
   if (!userId) return null
   try {
     const [users] = await pool.query('SELECT role FROM users WHERE id = ?', [userId])
-    return users.length ? (users[0].role || 'developer') : null
+    return users.length ? (users[0].role || 'frontend-developer') : null
   } catch {
     return null
   }
@@ -62,43 +62,65 @@ const hasPermission = (userRole, requiredRoles) => {
   return requiredRoles.includes(userRole)
 }
 
+const isProjectMember = async (userId, projectId) => {
+  if (!userId || !projectId) return false
+  try {
+    const [members] = await pool.query(
+      'SELECT id FROM project_members WHERE project_id = ? AND user_id = ?',
+      [projectId, userId]
+    )
+    return members.length > 0
+  } catch {
+    return false
+  }
+}
+
 const canModifyStory = async (userId, storyId, action = 'edit') => {
   const userRole = await getUserRole(userId)
   if (!userRole) return false
   
-  // Admin can do everything
-  if (userRole === 'admin') return true
-  
-  // Manager can delete/archive any story
-  if (action === 'delete' || action === 'archive') {
-    return hasPermission(userRole, ['manager', 'admin'])
-  }
-  
-  // For edit/update, check if user owns the story or is manager/admin
-  if (action === 'edit' || action === 'update') {
-    if (hasPermission(userRole, ['manager', 'admin'])) return true
-    try {
-      const [stories] = await pool.query('SELECT owner_id FROM stories WHERE id = ?', [storyId])
-      if (!stories.length) return false
-      return stories[0].owner_id === Number(userId)
-    } catch {
-      return false
+  try {
+    const [stories] = await pool.query('SELECT owner_id, project_id FROM stories WHERE id = ?', [storyId])
+    if (!stories.length) return false
+    
+    const story = stories[0]
+    
+    // Если история принадлежит проекту, проверяем членство
+    if (story.project_id) {
+      const isMember = await isProjectMember(userId, story.project_id)
+      if (!isMember) return false
     }
+    
+    // Admin can do everything
+    if (userRole === 'admin') return true
+    
+    // Team-lead can delete/archive any story
+    if (action === 'delete' || action === 'archive') {
+      return hasPermission(userRole, ['team-lead', 'admin'])
+    }
+    
+    // For edit/update, check if user owns the story or is team-lead/admin
+    if (action === 'edit' || action === 'update') {
+      if (hasPermission(userRole, ['team-lead', 'admin'])) return true
+      return story.owner_id === Number(userId)
+    }
+    
+    return false
+  } catch {
+    return false
   }
-  
-  return false
 }
 
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { username, password, role = 'developer' } = req.body ?? {}
+    const { username, password, role = 'frontend-developer' } = req.body ?? {}
     if (!username || !password) {
       return res.status(400).json({ message: 'username and password are required' })
     }
     if (password.length < 6) {
       return res.status(400).json({ message: 'password must be at least 6 characters' })
     }
-    if (!['developer', 'manager', 'admin'].includes(role)) {
+    if (!['admin', 'team-lead', 'backend-developer', 'frontend-developer', 'designer'].includes(role)) {
       return res.status(400).json({ message: 'invalid role' })
     }
 
@@ -141,17 +163,24 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ message: 'invalid credentials' })
     }
 
-    return res.json({ id: user.id, username, role: user.role || 'developer' })
+    return res.json({ id: user.id, username, role: user.role || 'frontend-developer' })
   } catch (error) {
     console.error('[login]', error)
     return res.status(500).json({ message: 'internal error' })
   }
 })
 
-app.get('/api/projects', async (_req, res) => {
+app.get('/api/projects', async (req, res) => {
   try {
+    const { userId } = req.query
+    
+    if (!userId) {
+      return res.status(401).json({ message: 'userId required' })
+    }
+
+    // Получаем только проекты, где пользователь является участником
     const [rows] = await pool.query(
-      `SELECT 
+      `SELECT DISTINCT
         p.id,
         p.name,
         p.description,
@@ -159,8 +188,11 @@ app.get('/api/projects', async (_req, res) => {
         p.created_at,
         u.username AS creator_name
       FROM projects p
+      INNER JOIN project_members pm ON pm.project_id = p.id
       LEFT JOIN users u ON u.id = p.created_by
-      ORDER BY p.created_at DESC`
+      WHERE pm.user_id = ?
+      ORDER BY p.created_at DESC`,
+      [userId]
     )
 
     return res.json({ projects: rows.map(row => ({
@@ -245,11 +277,14 @@ app.get('/api/projects/:id/members', async (req, res) => {
     const { id } = req.params
     const { userId } = req.query
 
-    if (userId) {
-      const userRole = await getUserRole(userId)
-      if (!hasPermission(userRole, ['admin'])) {
-        return res.status(403).json({ message: 'insufficient permissions' })
-      }
+    if (!userId) {
+      return res.status(401).json({ message: 'userId required' })
+    }
+
+    // Проверяем, является ли пользователь участником проекта
+    const isMember = await isProjectMember(userId, id)
+    if (!isMember) {
+      return res.status(403).json({ message: 'access denied: not a project member' })
     }
 
     const [rows] = await pool.query(
@@ -276,7 +311,7 @@ app.get('/api/projects/:id/members', async (req, res) => {
         projectId: row.project_id,
         userId: row.user_id,
         username: row.username,
-        role: row.role || 'developer',
+        role: row.role || 'frontend-developer',
         addedBy: row.added_by,
         addedByUsername: row.added_by_username,
         addedAt: row.added_at,
@@ -360,7 +395,7 @@ app.post('/api/projects/:id/members', async (req, res) => {
       projectId: member.project_id,
       userId: member.user_id,
       username: member.username,
-      role: member.role || 'developer',
+        role: member.role || 'frontend-developer',
       addedBy: member.added_by,
       addedByUsername: member.added_by_username,
       addedAt: member.added_at,
@@ -412,7 +447,12 @@ app.delete('/api/projects/:id/members/:userId', async (req, res) => {
 
 app.get('/api/stories', async (req, res) => {
   try {
-    const { projectId } = req.query
+    const { projectId, userId } = req.query
+    
+    if (!userId) {
+      return res.status(401).json({ message: 'userId required' })
+    }
+
     let query = `
       SELECT
         s.id AS story_id,
@@ -435,10 +475,17 @@ app.get('/api/stories', async (req, res) => {
     const params = []
     
     if (projectId) {
+      // Проверяем, является ли пользователь участником проекта
+      const isMember = await isProjectMember(userId, projectId)
+      if (!isMember) {
+        return res.status(403).json({ message: 'access denied: not a project member' })
+      }
       query += ' WHERE s.project_id = ?'
       params.push(projectId)
     } else {
-      query += ' WHERE s.project_id IS NULL'
+      // Для историй без проекта показываем только те, которые создал пользователь
+      query += ' WHERE s.project_id IS NULL AND s.owner_id = ?'
+      params.push(userId)
     }
     
     query += ' ORDER BY s.created_at DESC, t.created_at ASC'
@@ -464,6 +511,14 @@ app.post('/api/stories', async (req, res) => {
     const normalizedEstimate = Number.isFinite(Number(estimate)) ? Math.max(1, Number(estimate)) : 1
     const normalizedDescription = description?.trim() || ''
     const normalizedProjectId = projectId ? Number(projectId) : null
+
+    // Если история создается для проекта, проверяем доступ
+    if (normalizedProjectId) {
+      const isMember = await isProjectMember(ownerId, normalizedProjectId)
+      if (!isMember) {
+        return res.status(403).json({ message: 'access denied: not a project member' })
+      }
+    }
 
     const [result] = await pool.query(
       `INSERT INTO stories (title, description, estimate, status, owner_id, project_id)
@@ -711,7 +766,7 @@ app.get('/api/analytics/archive', async (req, res) => {
     const { userId } = req.query
     if (userId) {
       const userRole = await getUserRole(userId)
-      if (!hasPermission(userRole, ['manager', 'admin'])) {
+      if (!hasPermission(userRole, ['team-lead', 'admin'])) {
         return res.status(403).json({ message: 'insufficient permissions' })
       }
     }
@@ -858,7 +913,7 @@ app.patch('/api/users/:id', async (req, res) => {
     }
 
     if (role !== undefined) {
-      if (!['developer', 'manager', 'admin'].includes(role)) {
+      if (!['admin', 'team-lead', 'backend-developer', 'frontend-developer', 'designer'].includes(role)) {
         return res.status(400).json({ message: 'invalid role' })
       }
       updates.push('role = ?')
@@ -881,7 +936,7 @@ app.patch('/api/users/:id', async (req, res) => {
     }
 
     const user = rows[0]
-    return res.json({ id: user.id, username: user.username, role: user.role || 'developer' })
+    return res.json({ id: user.id, username: user.username, role: user.role || 'frontend-developer' })
   } catch (error) {
     console.error('[users:update]', error)
     return res.status(500).json({ message: 'internal error' })

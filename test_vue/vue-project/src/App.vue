@@ -69,7 +69,7 @@ const currentUser = ref(readSession())
 const currentPage = ref('board')
 const authMode = ref('login')
 const loginForm = reactive({ username: '', password: '' })
-const registerForm = reactive({ username: '', password: '', role: 'developer' })
+const registerForm = reactive({ username: '', password: '', role: 'frontend-developer' })
 const projectForm = reactive({ name: '', description: '' })
 const storyForm = reactive({
   title: '',
@@ -85,7 +85,7 @@ const editingStoryId = ref(null)
 const storyDrafts = reactive({})
 const settingsForm = reactive({
   password: '',
-  role: 'developer',
+  role: 'frontend-developer',
 })
 const showLoginPassword = ref(false)
 const showSettingsPassword = ref(false)
@@ -134,12 +134,13 @@ const collapsedColumns = reactive(
   }, {})
 )
 
-const userRole = computed(() => currentUser.value?.role || 'developer')
+const userRole = computed(() => currentUser.value?.role || 'frontend-developer')
 
 const loadProjects = async () => {
+  if (!currentUser.value) return
   isProjectsLoading.value = true
   try {
-    const data = await fetchProjects()
+    const data = await fetchProjects(currentUser.value.id)
     projects.value = data?.projects ?? []
     // Если нет текущего проекта и есть проекты, выбираем первый
     if (!currentProject.value && projects.value.length > 0) {
@@ -147,19 +148,25 @@ const loadProjects = async () => {
     }
   } catch (error) {
     console.error('Failed to load projects:', error)
+    projects.value = []
   } finally {
     isProjectsLoading.value = false
   }
 }
 
 const loadStories = async () => {
+  if (!currentUser.value) return
   isBoardLoading.value = true
   boardError.value = ''
   try {
-    const data = await fetchStories(currentProject.value)
+    const data = await fetchStories(currentProject.value, currentUser.value.id)
     stories.value = data?.stories ?? []
   } catch (error) {
     boardError.value = error.message || 'Не удалось загрузить данные.'
+    if (error.message?.includes('access denied') || error.message?.includes('not a project member')) {
+      boardError.value = 'У вас нет доступа к этому проекту.'
+      stories.value = []
+    }
   } finally {
     isBoardLoading.value = false
   }
@@ -258,13 +265,18 @@ const handleRemoveMember = async (userId) => {
 
 const getRoleLabel = (role) => {
   switch (role) {
-    case 'manager':
-      return 'Руководитель'
     case 'admin':
       return 'Администратор'
-    case 'developer':
+    case 'team-lead':
+      return 'Тим лид'
+    case 'backend-developer':
+      return 'Бэк разработчик'
+    case 'frontend-developer':
+      return 'Фронт разработчик'
+    case 'designer':
+      return 'Дизайнер'
     default:
-      return 'Разработчик'
+      return 'Фронт разработчик'
   }
 }
 
@@ -313,7 +325,7 @@ onMounted(async () => {
 
 watch(currentUser, (value) => {
   persistSession(value)
-  settingsForm.role = value?.role || 'developer'
+  settingsForm.role = value?.role || 'frontend-developer'
   settingsForm.password = ''
   if (value) {
     loadProjects().then(() => {
@@ -381,32 +393,24 @@ const analytics = computed(() => {
 })
 
 const userRoleLabel = computed(() => {
-  switch (userRole.value) {
-    case 'manager':
-      return 'Руководитель'
-    case 'admin':
-      return 'Администратор'
-    case 'developer':
-    default:
-      return 'Разработчик'
-  }
+  return getRoleLabel(userRole.value)
 })
 
 const canDeleteStory = computed(() => {
-  return ['manager', 'admin'].includes(userRole.value)
+  return ['team-lead', 'admin'].includes(userRole.value)
 })
 
 const canArchiveStory = computed(() => {
-  return ['manager', 'admin'].includes(userRole.value)
+  return ['team-lead', 'admin'].includes(userRole.value)
 })
 
 const canViewAnalytics = computed(() => {
-  return ['manager', 'admin'].includes(userRole.value)
+  return ['team-lead', 'admin'].includes(userRole.value)
 })
 
 const canEditStory = (story) => {
   if (!currentUser.value) return false
-  if (['manager', 'admin'].includes(userRole.value)) return true
+  if (['team-lead', 'admin'].includes(userRole.value)) return true
   return story.ownerId === currentUser.value.id
 }
 
@@ -436,7 +440,7 @@ const handleRegister = async () => {
     await registerUser({ username, password, role: registerForm.role })
     registerForm.username = ''
     registerForm.password = ''
-    registerForm.role = 'developer'
+    registerForm.role = 'frontend-developer'
     infoMessage.value = 'Аккаунт создан. Теперь можно войти.'
     authMode.value = 'login'
     loginForm.username = username
@@ -768,14 +772,16 @@ const toggleColumn = (columnValue) => {
             Пароль
             <input v-model="registerForm.password" type="password" placeholder="минимум 6 символов" />
           </label>
-          <label>
-            Роль
-            <select v-model="registerForm.role">
-              <option value="developer">Разработчик</option>
-              <option value="manager">Руководитель</option>
-              <option value="admin">Администратор</option>
-            </select>
-          </label>
+            <label>
+              Роль
+              <select v-model="registerForm.role">
+                <option value="admin">Администратор</option>
+                <option value="team-lead">Тим лид</option>
+                <option value="backend-developer">Бэк разработчик</option>
+                <option value="frontend-developer">Фронт разработчик</option>
+                <option value="designer">Дизайнер</option>
+              </select>
+            </label>
           <button class="primary" type="submit">Создать аккаунт</button>
           <p v-if="registerError" class="error">{{ registerError }}</p>
         </form>
@@ -1210,9 +1216,11 @@ const toggleColumn = (columnValue) => {
             <label>
               Роль
               <select v-model="settingsForm.role">
-                <option value="developer">Разработчик</option>
-                <option value="manager">Руководитель</option>
                 <option value="admin">Администратор</option>
+                <option value="team-lead">Тим лид</option>
+                <option value="backend-developer">Бэк разработчик</option>
+                <option value="frontend-developer">Фронт разработчик</option>
+                <option value="designer">Дизайнер</option>
               </select>
             </label>
             <button class="primary" type="button" @click="saveSettings">Сохранить</button>
@@ -1657,14 +1665,24 @@ textarea {
   color: #991b1b;
 }
 
-.member-role-badge.role-manager {
+.member-role-badge.role-team-lead {
   background: #dbeafe;
   color: #1e40af;
 }
 
-.member-role-badge.role-developer {
+.member-role-badge.role-backend-developer {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.member-role-badge.role-frontend-developer {
   background: #f1f5f9;
   color: #475467;
+}
+
+.member-role-badge.role-designer {
+  background: #fef3c7;
+  color: #92400e;
 }
 
 .member-meta {

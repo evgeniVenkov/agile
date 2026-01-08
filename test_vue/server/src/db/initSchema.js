@@ -25,9 +25,30 @@ export const ensureSchema = async () => {
     if (columns.length === 0) {
       await pool.query(`
         ALTER TABLE users 
-        ADD COLUMN role ENUM('developer', 'manager', 'admin') NOT NULL DEFAULT 'developer'
+        ADD COLUMN role ENUM('admin', 'team-lead', 'backend-developer', 'frontend-developer', 'designer') NOT NULL DEFAULT 'frontend-developer'
       `)
       console.log('Migration: added role column to users table')
+    } else {
+      // Migration: update role enum to new values
+      try {
+        await pool.query(`
+          ALTER TABLE users 
+          MODIFY COLUMN role ENUM('admin', 'team-lead', 'backend-developer', 'frontend-developer', 'designer') NOT NULL DEFAULT 'frontend-developer'
+        `)
+        // Migrate old roles to new ones
+        await pool.query(`
+          UPDATE users 
+          SET role = CASE 
+            WHEN role = 'admin' THEN 'admin'
+            WHEN role = 'manager' THEN 'team-lead'
+            WHEN role = 'developer' THEN 'frontend-developer'
+            ELSE 'frontend-developer'
+          END
+        `)
+        console.log('Migration: updated role enum to new values')
+      } catch (error) {
+        console.warn('Migration warning (role update):', error.message)
+      }
     }
   } catch (error) {
     console.warn('Migration warning:', error.message)

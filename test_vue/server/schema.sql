@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS users (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   username VARCHAR(60) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
-  role ENUM('developer', 'manager', 'admin') NOT NULL DEFAULT 'developer',
+  role ENUM('admin', 'team-lead', 'backend-developer', 'frontend-developer', 'designer') NOT NULL DEFAULT 'frontend-developer',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
