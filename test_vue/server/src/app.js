@@ -33,6 +33,10 @@ const mapStories = (rows) => {
         title: row.task_title,
         done: !!row.task_done,
         createdAt: row.task_created_at,
+        assignedTo: row.task_assigned_to,
+        assignedToUsername: row.task_assigned_to_username,
+        estimatedCompletionDate: row.task_estimated_completion_date,
+        assignedAt: row.task_assigned_at,
       })
     }
   })
@@ -467,10 +471,15 @@ app.get('/api/stories', async (req, res) => {
         t.id AS task_id,
         t.title AS task_title,
         t.done AS task_done,
-        t.created_at AS task_created_at
+        t.created_at AS task_created_at,
+        t.assigned_to AS task_assigned_to,
+        t.estimated_completion_date AS task_estimated_completion_date,
+        t.assigned_at AS task_assigned_at,
+        assignee.username AS task_assigned_to_username
       FROM stories s
       LEFT JOIN users u ON u.id = s.owner_id
       LEFT JOIN story_tasks t ON t.story_id = s.id
+      LEFT JOIN users assignee ON assignee.id = t.assigned_to
     `
     const params = []
     
@@ -632,20 +641,74 @@ app.post('/api/stories/:id/tasks', async (req, res) => {
 app.patch('/api/stories/:storyId/tasks/:taskId', async (req, res) => {
   try {
     const { storyId, taskId } = req.params
-    const { done } = req.body ?? {}
+    const { done, assignedTo, estimatedCompletionDate } = req.body ?? {}
 
-    const value = typeof done === 'boolean' ? done : null
-    if (value === null) {
-      return res.status(400).json({ message: 'done flag required' })
+    const updates = []
+    const values = []
+
+    if (typeof done === 'boolean') {
+      updates.push('done = ?')
+      values.push(done ? 1 : 0)
     }
 
-    await pool.query('UPDATE story_tasks SET done = ? WHERE id = ? AND story_id = ?', [
-      value ? 1 : 0,
-      taskId,
-      storyId,
-    ])
+    if (assignedTo !== undefined) {
+      if (assignedTo === null || assignedTo === '') {
+        updates.push('assigned_to = NULL')
+        updates.push('assigned_at = NULL')
+      } else {
+        updates.push('assigned_to = ?')
+        updates.push('assigned_at = CURRENT_TIMESTAMP')
+        values.push(assignedTo)
+      }
+    }
 
-    return res.json({ id: Number(taskId), done: value })
+    if (estimatedCompletionDate !== undefined) {
+      if (estimatedCompletionDate === null || estimatedCompletionDate === '') {
+        updates.push('estimated_completion_date = NULL')
+      } else {
+        updates.push('estimated_completion_date = ?')
+        values.push(estimatedCompletionDate)
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ message: 'no fields to update' })
+    }
+
+    values.push(taskId, storyId)
+    await pool.query(
+      `UPDATE story_tasks SET ${updates.join(', ')} WHERE id = ? AND story_id = ?`,
+      values
+    )
+
+    // Получаем обновленную задачу
+    const [rows] = await pool.query(
+      `SELECT 
+        t.id,
+        t.done,
+        t.assigned_to,
+        t.estimated_completion_date,
+        t.assigned_at,
+        u.username AS assigned_to_username
+      FROM story_tasks t
+      LEFT JOIN users u ON u.id = t.assigned_to
+      WHERE t.id = ? AND t.story_id = ?`,
+      [taskId, storyId]
+    )
+
+    if (!rows.length) {
+      return res.status(404).json({ message: 'task not found' })
+    }
+
+    const task = rows[0]
+    return res.json({
+      id: Number(taskId),
+      done: !!task.done,
+      assignedTo: task.assigned_to,
+      assignedToUsername: task.assigned_to_username,
+      estimatedCompletionDate: task.estimated_completion_date,
+      assignedAt: task.assigned_at,
+    })
   } catch (error) {
     console.error('[tasks:update]', error)
     return res.status(500).json({ message: 'internal error' })

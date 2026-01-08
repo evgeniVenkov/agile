@@ -14,6 +14,7 @@ import {
   updateStoryEstimate as updateStoryEstimateApi,
   addTask as addTaskApi,
   updateTaskState,
+  assignTask,
   deleteTask as deleteTaskApi,
   deleteStory as deleteStoryApi,
   completeStory as completeStoryApi,
@@ -108,6 +109,13 @@ const isMembersLoading = ref(false)
 const memberForm = reactive({ username: '' })
 const memberError = ref('')
 const memberSuccess = ref('')
+
+const availableMembersForAssignment = computed(() => {
+  if (!projectMembers.value || !Array.isArray(projectMembers.value)) return []
+  return projectMembers.value.filter(
+    (m) => m && m.userId && m.userId !== currentUser.value?.id
+  )
+})
 
 const today = new Date()
 const isoDate = (date) => date.toISOString().slice(0, 10)
@@ -213,14 +221,23 @@ const handleSelectProject = async () => {
 }
 
 const loadProjectMembers = async () => {
-  if (!currentProject.value || !currentUser.value) return
+  if (!currentProject.value || !currentUser.value) {
+    projectMembers.value = []
+    return
+  }
   isMembersLoading.value = true
   memberError.value = ''
   try {
     const data = await fetchProjectMembers(currentProject.value, currentUser.value.id)
-    projectMembers.value = data?.members ?? []
+    projectMembers.value = Array.isArray(data?.members) ? data.members : []
   } catch (error) {
-    memberError.value = error.message || 'Не удалось загрузить участников.'
+    // Если ошибка доступа, просто не загружаем участников
+    if (error.message?.includes('access denied') || error.message?.includes('not a project member')) {
+      projectMembers.value = []
+    } else {
+      memberError.value = error.message || 'Не удалось загрузить участников.'
+      projectMembers.value = []
+    }
   } finally {
     isMembersLoading.value = false
   }
@@ -352,9 +369,8 @@ watch(
 watch(currentProject, () => {
   if (currentUser.value) {
     loadStories()
-    if (userRole.value === 'admin') {
-      loadProjectMembers()
-    }
+    // Загружаем участников проекта для всех пользователей (для назначения задач)
+    loadProjectMembers()
   }
 })
 
@@ -655,6 +671,47 @@ const removeTask = async (storyId, taskId) => {
     await loadStories()
   } catch (error) {
     storyError.value = error.message || 'Не удалось удалить задачу.'
+  }
+}
+
+const editingTaskAssignment = ref(null)
+const taskAssignmentDrafts = reactive({})
+
+const startAssigningTask = (storyId, taskId, task) => {
+  editingTaskAssignment.value = `${storyId}-${taskId}`
+  taskAssignmentDrafts[`${storyId}-${taskId}`] = {
+    assignedTo: task.assignedTo || currentUser.value?.id || null,
+    estimatedCompletionDate: task.estimatedCompletionDate
+      ? new Date(task.estimatedCompletionDate).toISOString().slice(0, 16)
+      : '',
+  }
+}
+
+const cancelAssigningTask = (storyId, taskId) => {
+  editingTaskAssignment.value = null
+  delete taskAssignmentDrafts[`${storyId}-${taskId}`]
+}
+
+const saveTaskAssignment = async (storyId, taskId) => {
+  if (!currentUser.value) return
+  const draft = taskAssignmentDrafts[`${storyId}-${taskId}`]
+  if (!draft) return
+
+  try {
+    const estimatedDate = draft.estimatedCompletionDate?.trim()
+      ? draft.estimatedCompletionDate.trim()
+      : null
+    await assignTask(
+      storyId,
+      taskId,
+      draft.assignedTo || null,
+      estimatedDate
+    )
+    editingTaskAssignment.value = null
+    delete taskAssignmentDrafts[`${storyId}-${taskId}`]
+    await loadStories()
+  } catch (error) {
+    storyError.value = error.message || 'Не удалось назначить задачу.'
   }
 }
 
@@ -1070,15 +1127,90 @@ const toggleColumn = (columnValue) => {
                   </div>
 
                   <ul class="tasks">
-                    <li v-for="task in story.tasks" :key="task.id">
-                      <label>
-                        <input
-                          :checked="task.done"
-                          type="checkbox"
-                          @change="toggleTask(story.id, task.id)"
-                        />
-                        <span :class="{ done: task.done }">{{ task.title }}</span>
-                      </label>
+                    <li v-for="task in story.tasks" :key="task.id" class="task-item">
+                      <div class="task-content">
+                        <label>
+                          <input
+                            :checked="task.done"
+                            type="checkbox"
+                            @change="toggleTask(story.id, task.id)"
+                          />
+                          <span :class="{ done: task.done }">{{ task.title }}</span>
+                        </label>
+                        <div v-if="editingTaskAssignment !== `${story.id}-${task.id}`" class="task-info">
+                          <div v-if="task.assignedToUsername" class="task-assigned">
+                            <span class="task-assigned-label">Исполнитель:</span>
+                            <span class="task-assigned-user">{{ task.assignedToUsername }}</span>
+                          </div>
+                          <div v-if="task.estimatedCompletionDate" class="task-deadline">
+                            <span class="task-deadline-label">До:</span>
+                            <span class="task-deadline-date">
+                              {{ new Date(task.estimatedCompletionDate).toLocaleDateString('ru-RU', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              }) }}
+                            </span>
+                          </div>
+                          <button
+                            class="task-assign-btn"
+                            type="button"
+                            @click="startAssigningTask(story.id, task.id, task)"
+                            title="Назначить задачу"
+                          >
+                            {{ task.assignedTo ? 'Изменить' : 'Взять в работу' }}
+                          </button>
+                        </div>
+                        <div v-else class="task-assignment-form">
+                          <div class="task-assignment-fields">
+                            <label class="task-assignment-field">
+                              <span>Исполнитель:</span>
+                              <select
+                                v-model="taskAssignmentDrafts[`${story.id}-${task.id}`].assignedTo"
+                                class="task-assign-select"
+                              >
+                                <option :value="null">Не назначено</option>
+                                <option v-if="currentUser" :value="currentUser.id">
+                                  {{ currentUser.username }} (Я)
+                                </option>
+                                <option
+                                  v-for="member in availableMembersForAssignment"
+                                  :key="member.userId"
+                                  :value="member.userId"
+                                >
+                                  {{ member.username }}
+                                </option>
+                              </select>
+                            </label>
+                            <label class="task-assignment-field">
+                              <span>Дата выполнения:</span>
+                              <input
+                                v-model="taskAssignmentDrafts[`${story.id}-${task.id}`].estimatedCompletionDate"
+                                type="datetime-local"
+                                class="task-deadline-input"
+                              />
+                            </label>
+                          </div>
+                          <div class="task-assignment-actions">
+                            <button
+                              class="task-save-btn"
+                              type="button"
+                              @click="saveTaskAssignment(story.id, task.id)"
+                            >
+                              Сохранить
+                            </button>
+                            <button
+                              class="task-cancel-btn"
+                              type="button"
+                              @click="cancelAssigningTask(story.id, task.id)"
+                            >
+                              Отмена
+                            </button>
+                          </div>
+                        </div>
+                      </div>
                       <button
                         class="task-remove"
                         type="button"
@@ -2061,10 +2193,141 @@ textarea {
 .tasks li {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
-  padding-bottom: 6px;
+  padding-bottom: 12px;
   border-bottom: 1px solid #f1f5f9;
+}
+
+.task-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.task-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  font-size: 0.85rem;
+  margin-top: 4px;
+}
+
+.task-assigned,
+.task-deadline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.task-assigned-label,
+.task-deadline-label {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.task-assigned-user {
+  color: #6366f1;
+  font-weight: 600;
+}
+
+.task-deadline-date {
+  color: #d97706;
+  font-weight: 500;
+}
+
+.task-assign-btn {
+  border: 1px solid #6366f1;
+  background: #fff;
+  color: #6366f1;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.task-assign-btn:hover {
+  background: #6366f1;
+  color: #fff;
+}
+
+.task-assignment-form {
+  margin-top: 8px;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.task-assignment-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.task-assignment-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+
+.task-assignment-field span {
+  color: #475467;
+  font-weight: 500;
+}
+
+.task-assign-select,
+.task-deadline-input {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #d0d5dd;
+  font-size: 0.85rem;
+  background: #fff;
+}
+
+.task-assignment-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.task-save-btn,
+.task-cancel-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  font-weight: 500;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475467;
+  transition: all 0.2s ease;
+}
+
+.task-save-btn {
+  background: #22c55e;
+  color: #fff;
+  border-color: #22c55e;
+}
+
+.task-save-btn:hover {
+  background: #16a34a;
+}
+
+.task-cancel-btn:hover {
+  background: #f1f5f9;
 }
 
 .tasks label {

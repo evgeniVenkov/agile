@@ -130,6 +130,30 @@ export const ensureSchema = async () => {
   } catch (error) {
     console.warn('Migration warning:', error.message)
   }
+
+  // Migration: add assignment fields to story_tasks if they don't exist
+  try {
+    const [columns] = await pool.query(`
+      SELECT COLUMN_NAME 
+      FROM INFORMATION_SCHEMA.COLUMNS 
+      WHERE TABLE_SCHEMA = DATABASE() 
+      AND TABLE_NAME = 'story_tasks' 
+      AND COLUMN_NAME = 'assigned_to'
+    `)
+    
+    if (columns.length === 0) {
+      await pool.query(`
+        ALTER TABLE story_tasks 
+        ADD COLUMN assigned_to INT UNSIGNED,
+        ADD COLUMN estimated_completion_date DATETIME,
+        ADD COLUMN assigned_at TIMESTAMP NULL,
+        ADD CONSTRAINT fk_task_assignee FOREIGN KEY (assigned_to) REFERENCES users (id) ON DELETE SET NULL
+      `)
+      console.log('Migration: added assignment fields to story_tasks table')
+    }
+  } catch (error) {
+    console.warn('Migration warning:', error.message)
+  }
 }
 
 

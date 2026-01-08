@@ -45,8 +45,12 @@ CREATE TABLE IF NOT EXISTS story_tasks (
   story_id INT UNSIGNED NOT NULL,
   title VARCHAR(255) NOT NULL,
   done TINYINT(1) NOT NULL DEFAULT 0,
+  assigned_to INT UNSIGNED,
+  estimated_completion_date DATETIME,
+  assigned_at TIMESTAMP NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT fk_task_story FOREIGN KEY (story_id) REFERENCES stories (id) ON DELETE CASCADE
+  CONSTRAINT fk_task_story FOREIGN KEY (story_id) REFERENCES stories (id) ON DELETE CASCADE,
+  CONSTRAINT fk_task_assignee FOREIGN KEY (assigned_to) REFERENCES users (id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS archived_stories (
