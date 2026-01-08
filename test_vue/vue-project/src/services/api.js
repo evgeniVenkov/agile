@@ -22,7 +22,32 @@ export const registerUser = (payload) =>
 export const loginUser = (payload) =>
   request('/api/auth/login', { method: 'POST', body: JSON.stringify(payload) })
 
-export const fetchStories = () => request('/api/stories')
+export const fetchProjects = () => request('/api/projects')
+
+export const createProject = (payload) =>
+  request('/api/projects', { method: 'POST', body: JSON.stringify(payload) })
+
+export const fetchProjectMembers = (projectId, userId) => {
+  const query = userId ? `?userId=${userId}` : ''
+  return request(`/api/projects/${projectId}/members${query}`)
+}
+
+export const addProjectMember = (projectId, payload) =>
+  request(`/api/projects/${projectId}/members`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+
+export const removeProjectMember = (projectId, userId, requesterUserId) =>
+  request(`/api/projects/${projectId}/members/${userId}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ userId: requesterUserId }),
+  })
+
+export const fetchStories = (projectId = null) => {
+  const query = projectId ? `?projectId=${projectId}` : ''
+  return request(`/api/stories${query}`)
+}
 
 export const createStory = (payload) =>
   request('/api/stories', { method: 'POST', body: JSON.stringify(payload) })

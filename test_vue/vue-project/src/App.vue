@@ -3,6 +3,11 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   registerUser,
   loginUser,
+  fetchProjects,
+  createProject,
+  fetchProjectMembers,
+  addProjectMember,
+  removeProjectMember,
   fetchStories,
   createStory,
   updateStoryStatus as updateStoryStatusApi,
@@ -58,11 +63,14 @@ const statusOptions = [
 ]
 
 const stories = ref([])
+const projects = ref([])
+const currentProject = ref(null)
 const currentUser = ref(readSession())
 const currentPage = ref('board')
 const authMode = ref('login')
 const loginForm = reactive({ username: '', password: '' })
 const registerForm = reactive({ username: '', password: '', role: 'developer' })
+const projectForm = reactive({ name: '', description: '' })
 const storyForm = reactive({
   title: '',
   description: '',
@@ -85,6 +93,7 @@ const showSettingsPassword = ref(false)
 const authError = ref('')
 const registerError = ref('')
 const storyError = ref('')
+const projectError = ref('')
 const infoMessage = ref('')
 const boardError = ref('')
 const archiveError = ref('')
@@ -92,6 +101,13 @@ const settingsError = ref('')
 const settingsSuccess = ref('')
 const isBoardLoading = ref(false)
 const isArchiveLoading = ref(false)
+const isProjectsLoading = ref(false)
+const showProjectModal = ref(false)
+const projectMembers = ref([])
+const isMembersLoading = ref(false)
+const memberForm = reactive({ username: '' })
+const memberError = ref('')
+const memberSuccess = ref('')
 
 const today = new Date()
 const isoDate = (date) => date.toISOString().slice(0, 10)
@@ -118,11 +134,29 @@ const collapsedColumns = reactive(
   }, {})
 )
 
+const userRole = computed(() => currentUser.value?.role || 'developer')
+
+const loadProjects = async () => {
+  isProjectsLoading.value = true
+  try {
+    const data = await fetchProjects()
+    projects.value = data?.projects ?? []
+    // Если нет текущего проекта и есть проекты, выбираем первый
+    if (!currentProject.value && projects.value.length > 0) {
+      currentProject.value = projects.value[0].id
+    }
+  } catch (error) {
+    console.error('Failed to load projects:', error)
+  } finally {
+    isProjectsLoading.value = false
+  }
+}
+
 const loadStories = async () => {
   isBoardLoading.value = true
   boardError.value = ''
   try {
-    const data = await fetchStories()
+    const data = await fetchStories(currentProject.value)
     stories.value = data?.stories ?? []
   } catch (error) {
     boardError.value = error.message || 'Не удалось загрузить данные.'
@@ -131,8 +165,112 @@ const loadStories = async () => {
   }
 }
 
+const handleCreateProject = async () => {
+  projectError.value = ''
+  if (!currentUser.value) {
+    projectError.value = 'Нужно авторизоваться.'
+    return
+  }
+
+  const name = projectForm.name.trim()
+  if (!name) {
+    projectError.value = 'Введите название проекта.'
+    return
+  }
+
+  try {
+    const project = await createProject({
+      name,
+      description: projectForm.description.trim(),
+      createdBy: currentUser.value.id,
+    })
+    projectForm.name = ''
+    projectForm.description = ''
+    showProjectModal.value = false
+    await loadProjects()
+    currentProject.value = project.id
+    await loadStories()
+    if (userRole.value === 'admin') {
+      await loadProjectMembers()
+    }
+  } catch (error) {
+    projectError.value = error.message || 'Не удалось создать проект.'
+  }
+}
+
+const handleSelectProject = async () => {
+  await loadStories()
+  if (currentProject.value && userRole.value === 'admin') {
+    await loadProjectMembers()
+  }
+}
+
+const loadProjectMembers = async () => {
+  if (!currentProject.value || !currentUser.value) return
+  isMembersLoading.value = true
+  memberError.value = ''
+  try {
+    const data = await fetchProjectMembers(currentProject.value, currentUser.value.id)
+    projectMembers.value = data?.members ?? []
+  } catch (error) {
+    memberError.value = error.message || 'Не удалось загрузить участников.'
+  } finally {
+    isMembersLoading.value = false
+  }
+}
+
+const handleAddMember = async () => {
+  if (!currentProject.value || !currentUser.value) return
+  memberError.value = ''
+  memberSuccess.value = ''
+
+  const username = memberForm.username.trim()
+  if (!username) {
+    memberError.value = 'Введите логин пользователя.'
+    return
+  }
+
+  try {
+    await addProjectMember(currentProject.value, {
+      username,
+      addedBy: currentUser.value.id,
+    })
+    memberForm.username = ''
+    memberSuccess.value = 'Пользователь добавлен в проект.'
+    await loadProjectMembers()
+  } catch (error) {
+    memberError.value = error.message || 'Не удалось добавить пользователя.'
+  }
+}
+
+const handleRemoveMember = async (userId) => {
+  if (!currentProject.value || !currentUser.value) return
+  if (!confirm('Вы уверены, что хотите удалить этого участника из проекта?')) return
+
+  try {
+    await removeProjectMember(currentProject.value, userId, currentUser.value.id)
+    memberSuccess.value = 'Участник удален из проекта.'
+    await loadProjectMembers()
+  } catch (error) {
+    memberError.value = error.message || 'Не удалось удалить участника.'
+  }
+}
+
+const getRoleLabel = (role) => {
+  switch (role) {
+    case 'manager':
+      return 'Руководитель'
+    case 'admin':
+      return 'Администратор'
+    case 'developer':
+    default:
+      return 'Разработчик'
+  }
+}
+
 const loadArchiveAnalytics = async () => {
   if (!archiveFilters.from || !archiveFilters.to) return
+  if (!currentUser.value) return
   archiveError.value = ''
   isArchiveLoading.value = true
   try {
@@ -147,28 +285,49 @@ const loadArchiveAnalytics = async () => {
     const data = await fetchArchiveAnalytics({
       from,
       to,
-      userId: currentUser.value?.id,
+      userId: currentUser.value.id,
     })
     archiveData.summary = data.summary
     archiveData.velocity = data.velocity
     archiveData.stories = data.stories
     archiveData.range = data.range
   } catch (error) {
+    console.error('Error loading archive analytics:', error)
     archiveError.value = error.message || 'Не удалось получить данные архива.'
   } finally {
     isArchiveLoading.value = false
   }
 }
 
-onMounted(() => {
-  loadStories()
-  loadArchiveAnalytics()
+onMounted(async () => {
+  if (currentUser.value) {
+    try {
+      await loadProjects()
+      await loadStories()
+      await loadArchiveAnalytics()
+    } catch (error) {
+      console.error('Error loading initial data:', error)
+    }
+  }
 })
 
 watch(currentUser, (value) => {
   persistSession(value)
   settingsForm.role = value?.role || 'developer'
   settingsForm.password = ''
+  if (value) {
+    loadProjects().then(() => {
+      loadStories()
+      if (value.role === 'admin' && currentProject.value) {
+        loadProjectMembers()
+      }
+    })
+  } else {
+    projects.value = []
+    currentProject.value = null
+    stories.value = []
+    projectMembers.value = []
+  }
 })
 
 watch(
@@ -177,6 +336,21 @@ watch(
     loadArchiveAnalytics()
   }
 )
+
+watch(currentProject, () => {
+  if (currentUser.value) {
+    loadStories()
+    if (userRole.value === 'admin') {
+      loadProjectMembers()
+    }
+  }
+})
+
+watch(userRole, () => {
+  if (currentUser.value && currentProject.value && userRole.value === 'admin') {
+    loadProjectMembers()
+  }
+})
 
 const boardColumns = computed(() =>
   statusOptions.map((status) => {
@@ -205,8 +379,6 @@ const analytics = computed(() => {
     tasksDone,
   }
 })
-
-const userRole = computed(() => currentUser.value?.role || 'developer')
 
 const userRoleLabel = computed(() => {
   switch (userRole.value) {
@@ -355,6 +527,7 @@ const addStory = async () => {
       estimate: Number.isFinite(estimate) && estimate > 0 ? estimate : 1,
       status: storyForm.status,
       ownerId: currentUser.value.id,
+      projectId: currentProject.value,
     })
     storyForm.title = ''
     storyForm.description = ''
@@ -610,6 +783,51 @@ const toggleColumn = (columnValue) => {
     </section>
 
     <section v-else>
+      <div class="project-selector">
+        <div class="project-selector-content">
+          <label class="project-label">
+            Проект:
+            <select v-model="currentProject" @change="handleSelectProject" class="project-select">
+              <option :value="null">Без проекта</option>
+              <option v-for="project in projects" :key="project.id" :value="project.id">
+                {{ project.name }}
+              </option>
+            </select>
+          </label>
+          <button class="primary small" type="button" @click="showProjectModal = true">
+            + Создать проект
+          </button>
+        </div>
+      </div>
+
+      <div v-if="showProjectModal" class="modal-overlay" @click="showProjectModal = false">
+        <div class="modal-content" @click.stop>
+          <div class="modal-header">
+            <h2>Создать новый проект</h2>
+            <button class="modal-close" type="button" @click="showProjectModal = false">×</button>
+          </div>
+          <form class="project-form" @submit.prevent="handleCreateProject">
+            <label>
+              Название проекта
+              <input v-model="projectForm.name" placeholder="Название проекта" required />
+            </label>
+            <label>
+              Описание <span class="optional">(необязательно)</span>
+              <textarea
+                v-model="projectForm.description"
+                rows="3"
+                placeholder="Краткое описание проекта"
+              />
+            </label>
+            <div class="modal-actions">
+              <button class="primary" type="submit">Создать</button>
+              <button class="ghost-btn" type="button" @click="showProjectModal = false">Отмена</button>
+            </div>
+            <p v-if="projectError" class="error">{{ projectError }}</p>
+          </form>
+        </div>
+      </div>
+
       <div class="page-switch">
         <button
           class="tab"
@@ -1002,6 +1220,61 @@ const toggleColumn = (columnValue) => {
             <p v-if="settingsSuccess" class="info">{{ settingsSuccess }}</p>
           </div>
         </div>
+
+        <div v-if="userRole === 'admin' && currentProject" class="panel settings-panel">
+          <h2>Участники проекта</h2>
+          <p v-if="!currentProject" class="muted">Выберите проект для управления участниками</p>
+          <div v-else>
+            <div class="member-form">
+              <label>
+                Добавить участника по логину
+                <div class="member-input-group">
+                  <input
+                    v-model="memberForm.username"
+                    placeholder="Введите логин пользователя"
+                    @keyup.enter.prevent="handleAddMember"
+                  />
+                  <button class="primary small" type="button" @click="handleAddMember">
+                    Добавить
+                  </button>
+                </div>
+              </label>
+              <p v-if="memberError" class="error">{{ memberError }}</p>
+              <p v-if="memberSuccess" class="info">{{ memberSuccess }}</p>
+            </div>
+
+            <div class="members-list">
+              <h3>Список участников</h3>
+              <p v-if="isMembersLoading" class="muted">Загрузка...</p>
+              <p v-else-if="!projectMembers.length" class="muted">Нет участников в проекте</p>
+              <div v-else class="members-grid">
+                <div v-for="member in projectMembers" :key="member.id" class="member-card">
+                  <div class="member-info">
+                    <div class="member-header">
+                      <span class="member-username">{{ member.username }}</span>
+                      <span class="member-role-badge" :class="`role-${member.role}`">
+                        {{ getRoleLabel(member.role) }}
+                      </span>
+                    </div>
+                    <p class="member-meta">
+                      Добавлен: {{ new Date(member.addedAt).toLocaleDateString('ru-RU') }}
+                      <span v-if="member.addedByUsername"> · {{ member.addedByUsername }}</span>
+                    </p>
+                  </div>
+                  <button
+                    v-if="currentUser && member.userId !== currentUser.id"
+                    class="ghost-btn danger small"
+                    type="button"
+                    @click="handleRemoveMember(member.userId)"
+                    title="Удалить из проекта"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   </div>
@@ -1059,7 +1332,8 @@ const toggleColumn = (columnValue) => {
 
 .user-chip-role {
   font-size: 0.8rem;
-  color: #64748b;
+  color: #6366f1;
+  font-weight: 500;
 }
 
 .ghost {
@@ -1087,6 +1361,122 @@ const toggleColumn = (columnValue) => {
   grid-template-columns: repeat(2, 1fr);
   gap: 12px;
   margin-bottom: 24px;
+}
+
+.project-selector {
+  background: #fff;
+  border-radius: 16px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+}
+
+.project-selector-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.project-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #475467;
+  margin: 0;
+}
+
+.project-select {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #d0d5dd;
+  font: inherit;
+  background: #fff;
+  min-width: 200px;
+  cursor: pointer;
+}
+
+.primary.small {
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  width: auto;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-content {
+  background: #fff;
+  border-radius: 20px;
+  padding: 0;
+  max-width: 500px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.3);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px 24px 0;
+  margin-bottom: 20px;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.modal-close {
+  border: none;
+  background: transparent;
+  font-size: 2rem;
+  line-height: 1;
+  cursor: pointer;
+  color: #64748b;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  transition: background-color 0.2s ease;
+}
+
+.modal-close:hover {
+  background: #f1f5f9;
+}
+
+.project-form {
+  padding: 0 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.modal-actions .primary {
+  width: auto;
 }
 
 .page-switch {
@@ -1192,6 +1582,100 @@ textarea {
 
 .settings-panel h2 {
   margin-top: 0;
+}
+
+.settings-panel h3 {
+  margin-top: 24px;
+  margin-bottom: 16px;
+  font-size: 1.1rem;
+}
+
+.member-form {
+  margin-bottom: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.member-input-group {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.member-input-group input {
+  flex: 1;
+}
+
+.members-list {
+  margin-top: 16px;
+}
+
+.members-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.member-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.member-info {
+  flex: 1;
+}
+
+.member-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.member-username {
+  font-weight: 600;
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.member-role-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.member-role-badge.role-admin {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.member-role-badge.role-manager {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.member-role-badge.role-developer {
+  background: #f1f5f9;
+  color: #475467;
+}
+
+.member-meta {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin: 0;
+}
+
+.ghost-btn.small {
+  padding: 6px 12px;
+  font-size: 0.8rem;
 }
 
 .password-field {

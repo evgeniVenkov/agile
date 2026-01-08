@@ -6,6 +6,27 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS projects (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  created_by INT UNSIGNED NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_project_creator FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS project_members (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  project_id INT UNSIGNED NOT NULL,
+  user_id INT UNSIGNED NOT NULL,
+  added_by INT UNSIGNED NOT NULL,
+  added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_member_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE,
+  CONSTRAINT fk_member_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_member_adder FOREIGN KEY (added_by) REFERENCES users (id) ON DELETE CASCADE,
+  UNIQUE KEY unique_project_user (project_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS stories (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   title VARCHAR(255) NOT NULL,
@@ -13,8 +34,10 @@ CREATE TABLE IF NOT EXISTS stories (
   estimate INT UNSIGNED NOT NULL DEFAULT 1,
   status ENUM('backlog', 'ready', 'in-progress', 'done') NOT NULL DEFAULT 'backlog',
   owner_id INT UNSIGNED NOT NULL,
+  project_id INT UNSIGNED,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT fk_story_owner FOREIGN KEY (owner_id) REFERENCES users (id) ON DELETE CASCADE
+  CONSTRAINT fk_story_owner FOREIGN KEY (owner_id) REFERENCES users (id) ON DELETE CASCADE,
+  CONSTRAINT fk_story_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS story_tasks (

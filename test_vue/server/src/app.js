@@ -148,10 +148,273 @@ app.post('/api/auth/login', async (req, res) => {
   }
 })
 
-app.get('/api/stories', async (_req, res) => {
+app.get('/api/projects', async (_req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT
+      `SELECT 
+        p.id,
+        p.name,
+        p.description,
+        p.created_by,
+        p.created_at,
+        u.username AS creator_name
+      FROM projects p
+      LEFT JOIN users u ON u.id = p.created_by
+      ORDER BY p.created_at DESC`
+    )
+
+    return res.json({ projects: rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      createdBy: row.created_by,
+      creatorName: row.creator_name,
+      createdAt: row.created_at,
+    })) })
+  } catch (error) {
+    console.error('[projects:list]', error)
+    return res.status(500).json({ message: 'internal error' })
+  }
+})
+
+app.post('/api/projects', async (req, res) => {
+  try {
+    const { name, description = '', createdBy } = req.body ?? {}
+    if (!name || !createdBy) {
+      return res.status(400).json({ message: 'name and createdBy are required' })
+    }
+
+    const normalizedName = String(name).trim()
+    if (!normalizedName) {
+      return res.status(400).json({ message: 'name cannot be empty' })
+    }
+
+    const [result] = await pool.query(
+      `INSERT INTO projects (name, description, created_by)
+       VALUES (?, ?, ?)`,
+      [normalizedName, String(description || '').trim(), createdBy]
+    )
+
+    // Автоматически добавляем создателя как участника проекта
+    try {
+      await pool.query(
+        `INSERT INTO project_members (project_id, user_id, added_by)
+         VALUES (?, ?, ?)`,
+        [result.insertId, createdBy, createdBy]
+      )
+    } catch (memberError) {
+      // Игнорируем ошибку, если пользователь уже участник (не должно произойти)
+      console.warn('[projects:create] Failed to add creator as member:', memberError.message)
+    }
+
+    const [rows] = await pool.query(
+      `SELECT 
+        p.id,
+        p.name,
+        p.description,
+        p.created_by,
+        p.created_at,
+        u.username AS creator_name
+      FROM projects p
+      LEFT JOIN users u ON u.id = p.created_by
+      WHERE p.id = ?`,
+      [result.insertId]
+    )
+
+    if (!rows.length) {
+      return res.status(500).json({ message: 'failed to create project' })
+    }
+
+    const project = rows[0]
+    return res.status(201).json({
+      id: project.id,
+      name: project.name,
+      description: project.description,
+      createdBy: project.created_by,
+      creatorName: project.creator_name,
+      createdAt: project.created_at,
+    })
+  } catch (error) {
+    console.error('[projects:create]', error)
+    return res.status(500).json({ message: 'internal error' })
+  }
+})
+
+app.get('/api/projects/:id/members', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { userId } = req.query
+
+    if (userId) {
+      const userRole = await getUserRole(userId)
+      if (!hasPermission(userRole, ['admin'])) {
+        return res.status(403).json({ message: 'insufficient permissions' })
+      }
+    }
+
+    const [rows] = await pool.query(
+      `SELECT 
+        pm.id,
+        pm.project_id,
+        pm.user_id,
+        pm.added_by,
+        pm.added_at,
+        u.username,
+        u.role,
+        adder.username AS added_by_username
+      FROM project_members pm
+      INNER JOIN users u ON u.id = pm.user_id
+      LEFT JOIN users adder ON adder.id = pm.added_by
+      WHERE pm.project_id = ?
+      ORDER BY pm.added_at ASC`,
+      [id]
+    )
+
+    return res.json({
+      members: rows.map(row => ({
+        id: row.id,
+        projectId: row.project_id,
+        userId: row.user_id,
+        username: row.username,
+        role: row.role || 'developer',
+        addedBy: row.added_by,
+        addedByUsername: row.added_by_username,
+        addedAt: row.added_at,
+      })),
+    })
+  } catch (error) {
+    console.error('[projects:members:list]', error)
+    return res.status(500).json({ message: 'internal error' })
+  }
+})
+
+app.post('/api/projects/:id/members', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { username, addedBy } = req.body ?? {}
+
+    if (!username || !addedBy) {
+      return res.status(400).json({ message: 'username and addedBy are required' })
+    }
+
+    const requesterRole = await getUserRole(addedBy)
+    if (!hasPermission(requesterRole, ['admin'])) {
+      return res.status(403).json({ message: 'insufficient permissions' })
+    }
+
+    // Найти пользователя по username
+    const [users] = await pool.query('SELECT id FROM users WHERE username = ?', [username])
+    if (!users.length) {
+      return res.status(404).json({ message: 'user not found' })
+    }
+
+    const targetUserId = users[0].id
+
+    // Проверить, что проект существует
+    const [projects] = await pool.query('SELECT id FROM projects WHERE id = ?', [id])
+    if (!projects.length) {
+      return res.status(404).json({ message: 'project not found' })
+    }
+
+    // Проверить, не является ли пользователь уже участником
+    const [existing] = await pool.query(
+      'SELECT id FROM project_members WHERE project_id = ? AND user_id = ?',
+      [id, targetUserId]
+    )
+    if (existing.length) {
+      return res.status(409).json({ message: 'user is already a member of this project' })
+    }
+
+    // Добавить участника
+    const [result] = await pool.query(
+      `INSERT INTO project_members (project_id, user_id, added_by)
+       VALUES (?, ?, ?)`,
+      [id, targetUserId, addedBy]
+    )
+
+    // Получить информацию о добавленном участнике
+    const [memberRows] = await pool.query(
+      `SELECT 
+        pm.id,
+        pm.project_id,
+        pm.user_id,
+        pm.added_by,
+        pm.added_at,
+        u.username,
+        u.role,
+        adder.username AS added_by_username
+      FROM project_members pm
+      INNER JOIN users u ON u.id = pm.user_id
+      LEFT JOIN users adder ON adder.id = pm.added_by
+      WHERE pm.id = ?`,
+      [result.insertId]
+    )
+
+    if (!memberRows.length) {
+      return res.status(500).json({ message: 'failed to retrieve member info' })
+    }
+
+    const member = memberRows[0]
+    return res.status(201).json({
+      id: member.id,
+      projectId: member.project_id,
+      userId: member.user_id,
+      username: member.username,
+      role: member.role || 'developer',
+      addedBy: member.added_by,
+      addedByUsername: member.added_by_username,
+      addedAt: member.added_at,
+    })
+  } catch (error) {
+    console.error('[projects:members:add]', error)
+    return res.status(500).json({ message: 'internal error' })
+  }
+})
+
+app.delete('/api/projects/:id/members/:userId', async (req, res) => {
+  try {
+    const { id, userId: targetUserId } = req.params
+    const { userId: requesterUserId } = req.body ?? {}
+
+    if (!requesterUserId) {
+      return res.status(401).json({ message: 'userId required' })
+    }
+
+    const requesterRole = await getUserRole(requesterUserId)
+    if (!hasPermission(requesterRole, ['admin'])) {
+      return res.status(403).json({ message: 'insufficient permissions' })
+    }
+
+    // Нельзя удалить создателя проекта
+    const [projects] = await pool.query('SELECT created_by FROM projects WHERE id = ?', [id])
+    if (!projects.length) {
+      return res.status(404).json({ message: 'project not found' })
+    }
+    if (projects[0].created_by === Number(targetUserId)) {
+      return res.status(400).json({ message: 'cannot remove project creator' })
+    }
+
+    const [result] = await pool.query(
+      'DELETE FROM project_members WHERE project_id = ? AND user_id = ?',
+      [id, targetUserId]
+    )
+
+    if (!result.affectedRows) {
+      return res.status(404).json({ message: 'member not found' })
+    }
+
+    return res.status(204).send()
+  } catch (error) {
+    console.error('[projects:members:remove]', error)
+    return res.status(500).json({ message: 'internal error' })
+  }
+})
+
+app.get('/api/stories', async (req, res) => {
+  try {
+    const { projectId } = req.query
+    let query = `
+      SELECT
         s.id AS story_id,
         s.title AS story_title,
         s.description AS story_description,
@@ -159,6 +422,7 @@ app.get('/api/stories', async (_req, res) => {
         s.status AS story_status,
         s.created_at AS story_created_at,
         s.owner_id,
+        s.project_id,
         u.username AS story_owner,
         t.id AS task_id,
         t.title AS task_title,
@@ -167,8 +431,19 @@ app.get('/api/stories', async (_req, res) => {
       FROM stories s
       LEFT JOIN users u ON u.id = s.owner_id
       LEFT JOIN story_tasks t ON t.story_id = s.id
-      ORDER BY s.created_at DESC, t.created_at ASC`
-    )
+    `
+    const params = []
+    
+    if (projectId) {
+      query += ' WHERE s.project_id = ?'
+      params.push(projectId)
+    } else {
+      query += ' WHERE s.project_id IS NULL'
+    }
+    
+    query += ' ORDER BY s.created_at DESC, t.created_at ASC'
+
+    const [rows] = await pool.query(query, params)
 
     return res.json({ stories: mapStories(rows) })
   } catch (error) {
@@ -179,7 +454,7 @@ app.get('/api/stories', async (_req, res) => {
 
 app.post('/api/stories', async (req, res) => {
   try {
-    const { title, description = '', estimate = 1, status = 'backlog', ownerId } = req.body ?? {}
+    const { title, description = '', estimate = 1, status = 'backlog', ownerId, projectId } = req.body ?? {}
     if (!ownerId) {
       return res.status(401).json({ message: 'ownerId required' })
     }
@@ -188,16 +463,17 @@ app.post('/api/stories', async (req, res) => {
     }
     const normalizedEstimate = Number.isFinite(Number(estimate)) ? Math.max(1, Number(estimate)) : 1
     const normalizedDescription = description?.trim() || ''
+    const normalizedProjectId = projectId ? Number(projectId) : null
 
     const [result] = await pool.query(
-      `INSERT INTO stories (title, description, estimate, status, owner_id)
-       VALUES (?, ?, ?, ?, ?)`,
-      [title, normalizedDescription, normalizedEstimate, status, ownerId]
+      `INSERT INTO stories (title, description, estimate, status, owner_id, project_id)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [title, normalizedDescription, normalizedEstimate, status, ownerId, normalizedProjectId]
     )
 
     return res
       .status(201)
-      .json({ id: result.insertId, title, description, estimate: normalizedEstimate, status })
+      .json({ id: result.insertId, title, description, estimate: normalizedEstimate, status, projectId: normalizedProjectId })
   } catch (error) {
     console.error('[stories:create]', error)
     return res.status(500).json({ message: 'internal error' })
