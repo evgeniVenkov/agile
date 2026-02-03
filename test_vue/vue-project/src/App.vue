@@ -80,6 +80,7 @@ const storyForm = reactive({
 })
 const taskDrafts = reactive({})
 const isPanelCollapsed = ref(false)
+const collapsedTasks = reactive({})
 const editingEstimate = ref(null)
 const estimateDrafts = reactive({})
 const editingStoryId = ref(null)
@@ -411,6 +412,12 @@ const analytics = computed(() => {
 const userRoleLabel = computed(() => {
   return getRoleLabel(userRole.value)
 })
+
+const isTasksCollapsed = (storyId) => !!collapsedTasks[storyId]
+
+const toggleTasksCollapsed = (storyId) => {
+  collapsedTasks[storyId] = !collapsedTasks[storyId]
+}
 
 const canDeleteStory = computed(() => {
   return ['team-lead', 'admin'].includes(userRole.value)
@@ -1089,6 +1096,14 @@ const toggleColumn = (columnValue) => {
                       Задач: {{ story.tasks.length }} · Завершено:
                       {{ story.tasks.filter((task) => task.done).length }}
                     </span>
+                    <button
+                      class="task-toggle"
+                      type="button"
+                      :aria-expanded="!isTasksCollapsed(story.id)"
+                      @click="toggleTasksCollapsed(story.id)"
+                    >
+                      {{ isTasksCollapsed(story.id) ? 'Развернуть задачи' : 'Свернуть задачи' }}
+                    </button>
                   </div>
                   <div v-if="canArchiveStory || canDeleteStory" class="story-actions">
                     <button
@@ -1126,7 +1141,8 @@ const toggleColumn = (columnValue) => {
                     </template>
                   </div>
 
-                  <ul class="tasks">
+                  <div v-if="!isTasksCollapsed(story.id)" class="tasks-block">
+                    <ul class="tasks">
                     <li v-for="task in story.tasks" :key="task.id" class="task-item">
                       <div class="task-content">
                         <label>
@@ -1228,6 +1244,10 @@ const toggleColumn = (columnValue) => {
                       @keyup.enter.prevent="addTaskToStory(story.id)"
                     />
                     <button type="button" @click="addTaskToStory(story.id)">Добавить</button>
+                  </div>
+                  </div>
+                  <div v-else class="tasks-collapsed">
+                    Задачи скрыты
                   </div>
                 </article>
               </div>
@@ -2179,6 +2199,35 @@ textarea {
 .tag.secondary {
   background: #eef2ff;
   color: #4c1d95;
+}
+
+.task-toggle {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  color: #475467;
+  cursor: pointer;
+}
+
+.task-toggle:hover {
+  border-color: #cbd5f5;
+  color: #111827;
+}
+
+.tasks-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tasks-collapsed {
+  padding: 8px 12px;
+  border: 1px dashed #e2e8f0;
+  border-radius: 12px;
+  color: #94a3b8;
+  font-size: 0.85rem;
 }
 
 .tasks {
