@@ -1655,18 +1655,20 @@ const toggleColumn = (columnValue) => {
             <select v-model="selectedReleaseId">
               <option :value="null">Выберите релиз</option>
               <option v-for="release in releases" :key="release.id" :value="release.id">
-                { release.name } ? { new Date(release.releaseDate).toLocaleDateString('ru-RU') }
+                {{ release.name }} — {{ new Date(release.releaseDate).toLocaleDateString('ru-RU') }}
               </option>
             </select>
           </label>
           <button class="ghost-btn" type="button" @click="loadReleaseBurndown">Обновить</button>
         </div>
         <p class="muted" v-if="releaseBurndown.range">
-          Период: { new Date(releaseBurndown.range.from).toLocaleDateString('ru-RU') } ?
-          { new Date(releaseBurndown.range.to).toLocaleDateString('ru-RU') }
+          Период:
+          {{ new Date(releaseBurndown.range.from).toLocaleDateString('ru-RU') }}
+          —
+          {{ new Date(releaseBurndown.range.to).toLocaleDateString('ru-RU') }}
         </p>
         <p v-if="isReleaseBurndownLoading" class="muted">Строим график...</p>
-        <p v-if="releaseBurndownError" class="error">{ releaseBurndownError }</p>
+        <p v-if="releaseBurndownError" class="error">{{ releaseBurndownError }}</p>
 
         <div v-if="releaseBurndownPlot" class="burndown-chart">
           <svg
@@ -1694,9 +1696,11 @@ const toggleColumn = (columnValue) => {
           </svg>
           <div class="burndown-axis">
             <span>
-              { releaseBurndownPlot.points[0]?.date
-                ? new Date(releaseBurndownPlot.points[0].date).toLocaleDateString('ru-RU')
-                : '' }
+              {{
+                releaseBurndownPlot.points[0]?.date
+                  ? new Date(releaseBurndownPlot.points[0].date).toLocaleDateString('ru-RU')
+                  : ''
+              }}
             </span>
             <span>
               {{
