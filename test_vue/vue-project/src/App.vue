@@ -15,6 +15,7 @@ import {
   addTask as addTaskApi,
   updateTaskState,
   assignTask,
+  updateTaskTitle as updateTaskTitleApi,
   deleteTask as deleteTaskApi,
   deleteStory as deleteStoryApi,
   completeStory as completeStoryApi,
@@ -683,6 +684,8 @@ const removeTask = async (storyId, taskId) => {
 
 const editingTaskAssignment = ref(null)
 const taskAssignmentDrafts = reactive({})
+const editingTaskTitle = ref(null)
+const taskTitleDrafts = reactive({})
 
 const startAssigningTask = (storyId, taskId, task) => {
   editingTaskAssignment.value = `${storyId}-${taskId}`
@@ -719,6 +722,34 @@ const saveTaskAssignment = async (storyId, taskId) => {
     await loadStories()
   } catch (error) {
     storyError.value = error.message || 'Не удалось назначить задачу.'
+  }
+}
+
+const startEditingTaskTitle = (storyId, taskId, task) => {
+  editingTaskTitle.value = `${storyId}-${taskId}`
+  taskTitleDrafts[`${storyId}-${taskId}`] = task.title
+}
+
+const cancelEditingTaskTitle = (storyId, taskId) => {
+  editingTaskTitle.value = null
+  delete taskTitleDrafts[`${storyId}-${taskId}`]
+}
+
+const saveTaskTitle = async (storyId, taskId) => {
+  const key = `${storyId}-${taskId}`
+  const draft = (taskTitleDrafts[key] ?? '').trim()
+  if (!draft) {
+    storyError.value = 'Введите название задачи.'
+    return
+  }
+
+  try {
+    await updateTaskTitleApi(storyId, taskId, draft)
+    editingTaskTitle.value = null
+    delete taskTitleDrafts[key]
+    await loadStories()
+  } catch (error) {
+    storyError.value = error.message || 'Не удалось обновить задачу.'
   }
 }
 
@@ -1145,13 +1176,46 @@ const toggleColumn = (columnValue) => {
                     <ul class="tasks">
                     <li v-for="task in story.tasks" :key="task.id" class="task-item">
                       <div class="task-content">
-                        <label>
+                        <label class="task-label">
                           <input
                             :checked="task.done"
                             type="checkbox"
                             @change="toggleTask(story.id, task.id)"
                           />
-                          <span :class="{ done: task.done }">{{ task.title }}</span>
+                          <div class="task-title">
+                            <template v-if="editingTaskTitle === `${story.id}-${task.id}`">
+                              <input
+                                v-model="taskTitleDrafts[`${story.id}-${task.id}`]"
+                                class="task-title-input"
+                                @keyup.enter="saveTaskTitle(story.id, task.id)"
+                                @keyup.esc="cancelEditingTaskTitle(story.id, task.id)"
+                              />
+                              <button
+                                class="task-title-save"
+                                type="button"
+                                @click="saveTaskTitle(story.id, task.id)"
+                              >
+                                Сохранить
+                              </button>
+                              <button
+                                class="task-title-cancel"
+                                type="button"
+                                @click="cancelEditingTaskTitle(story.id, task.id)"
+                              >
+                                Отмена
+                              </button>
+                            </template>
+                            <template v-else>
+                              <span :class="{ done: task.done }">{{ task.title }}</span>
+                              <button
+                                class="task-title-edit"
+                                type="button"
+                                @click="startEditingTaskTitle(story.id, task.id, task)"
+                              >
+                                Редактировать
+                              </button>
+                            </template>
+                          </div>
                         </label>
                         <div v-if="editingTaskAssignment !== `${story.id}-${task.id}`" class="task-info">
                           <div v-if="task.assignedToUsername" class="task-assigned">
@@ -2246,6 +2310,52 @@ textarea {
   gap: 8px;
   padding-bottom: 12px;
   border-bottom: 1px solid #f1f5f9;
+}
+
+.task-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+}
+
+.task-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.task-title-input {
+  flex: 1 1 220px;
+  min-width: 160px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #cbd5f5;
+  font: inherit;
+}
+
+.task-title-edit,
+.task-title-save,
+.task-title-cancel {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  color: #475467;
+  cursor: pointer;
+}
+
+.task-title-save:hover {
+  color: #16a34a;
+  border-color: #bbf7d0;
+}
+
+.task-title-cancel:hover {
+  color: #dc2626;
+  border-color: #fecaca;
 }
 
 .task-item {

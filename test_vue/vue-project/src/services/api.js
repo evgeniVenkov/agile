@@ -82,6 +82,12 @@ export const assignTask = (storyId, taskId, assignedTo, estimatedCompletionDate 
     body: JSON.stringify({ assignedTo, estimatedCompletionDate }),
   })
 
+export const updateTaskTitle = (storyId, taskId, title) =>
+  request(`/api/stories/${storyId}/tasks/${taskId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ title }),
+  })
+
 export const deleteTask = (storyId, taskId) =>
   request(`/api/stories/${storyId}/tasks/${taskId}`, { method: 'DELETE' })
 

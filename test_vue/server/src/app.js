@@ -641,10 +641,19 @@ app.post('/api/stories/:id/tasks', async (req, res) => {
 app.patch('/api/stories/:storyId/tasks/:taskId', async (req, res) => {
   try {
     const { storyId, taskId } = req.params
-    const { done, assignedTo, estimatedCompletionDate } = req.body ?? {}
+    const { done, assignedTo, estimatedCompletionDate, title } = req.body ?? {}
 
     const updates = []
     const values = []
+
+    if (title !== undefined) {
+      const trimmedTitle = String(title ?? '').trim()
+      if (!trimmedTitle) {
+        return res.status(400).json({ message: 'title required' })
+      }
+      updates.push('title = ?')
+      values.push(trimmedTitle)
+    }
 
     if (typeof done === 'boolean') {
       updates.push('done = ?')
@@ -685,6 +694,7 @@ app.patch('/api/stories/:storyId/tasks/:taskId', async (req, res) => {
     const [rows] = await pool.query(
       `SELECT 
         t.id,
+        t.title,
         t.done,
         t.assigned_to,
         t.estimated_completion_date,
@@ -703,6 +713,7 @@ app.patch('/api/stories/:storyId/tasks/:taskId', async (req, res) => {
     const task = rows[0]
     return res.json({
       id: Number(taskId),
+      title: task.title,
       done: !!task.done,
       assignedTo: task.assigned_to,
       assignedToUsername: task.assigned_to_username,
@@ -1021,4 +1032,3 @@ app.delete('/api/archive/:id', async (req, res) => {
 })
 
 export default app
-
