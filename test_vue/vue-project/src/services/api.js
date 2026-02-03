@@ -121,6 +121,14 @@ export const fetchArchiveAnalytics = (params = {}) => {
   return request(`/api/analytics/archive${suffix}`)
 }
 
+export const fetchReleaseBurndown = (params = {}) => {
+  const query = new URLSearchParams()
+  if (params.releaseId) query.set('releaseId', params.releaseId)
+  if (params.userId) query.set('userId', params.userId)
+  const suffix = query.toString() ? `?${query.toString()}` : ''
+  return request(`/api/analytics/release-burndown${suffix}`)
+}
+
 export const deleteArchivedStory = (id) =>
   request(`/api/archive/${id}`, {
     method: 'DELETE',

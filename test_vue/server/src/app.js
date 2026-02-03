@@ -1013,6 +1013,7 @@ app.post('/api/stories/:id/complete', async (req, res) => {
         s.status AS story_status,
         s.created_at AS story_created_at,
         s.owner_id,
+        s.release_id AS story_release_id,
         u.username AS story_owner,
         t.id AS task_id,
         t.title AS task_title,
@@ -1033,8 +1034,8 @@ app.post('/api/stories/:id/complete', async (req, res) => {
 
     const [result] = await pool.query(
       `INSERT INTO archived_stories
-        (original_story_id, title, description, estimate, status, owner_id, owner_name, tasks_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        (original_story_id, title, description, estimate, status, owner_id, owner_name, release_id, tasks_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         story.id,
         story.title,
@@ -1043,6 +1044,7 @@ app.post('/api/stories/:id/complete', async (req, res) => {
         'done',
         story.ownerId || null,
         story.owner || null,
+        story.releaseId || null,
         JSON.stringify(story.tasks ?? []),
       ]
     )
@@ -1172,6 +1174,116 @@ app.get('/api/analytics/archive', async (req, res) => {
     })
   } catch (error) {
     console.error('[analytics:archive]', error)
+    return res.status(500).json({ message: 'internal error' })
+  }
+})
+
+app.get('/api/analytics/release-burndown', async (req, res) => {
+  try {
+    const { userId, releaseId } = req.query
+    if (!userId || !releaseId) {
+      return res.status(400).json({ message: 'userId and releaseId required' })
+    }
+
+    const userRole = await getUserRole(userId)
+    if (!hasPermission(userRole, ['team-lead', 'admin'])) {
+      return res.status(403).json({ message: 'insufficient permissions' })
+    }
+
+    const [releaseRows] = await pool.query(
+      'SELECT id, project_id, name, release_date, created_at FROM releases WHERE id = ?',
+      [releaseId]
+    )
+    if (!releaseRows.length) {
+      return res.status(404).json({ message: 'release not found' })
+    }
+
+    const release = releaseRows[0]
+    const isMember = await isProjectMember(userId, release.project_id)
+    if (!isMember) {
+      return res.status(403).json({ message: 'access denied: not a project member' })
+    }
+
+    const startDate = parseDateParam(release.created_at) || parseDateParam(release.release_date)
+    const endDate = parseDateParam(release.release_date)
+    if (!startDate || !endDate) {
+      return res.status(400).json({ message: 'release dates required' })
+    }
+
+    const fromBoundary = new Date(startDate)
+    fromBoundary.setHours(0, 0, 0, 0)
+    const toBoundary = new Date(endDate)
+    toBoundary.setHours(23, 59, 59, 999)
+    if (fromBoundary > toBoundary) {
+      toBoundary.setTime(fromBoundary.getTime())
+    }
+
+    const [totals] = await pool.query(
+      `
+        SELECT
+          SUM(estimate) AS totalPoints,
+          COUNT(*) AS totalStories
+        FROM (
+          SELECT estimate FROM stories WHERE release_id = ?
+          UNION ALL
+          SELECT estimate FROM archived_stories WHERE release_id = ?
+        ) t
+      `,
+      [releaseId, releaseId]
+    )
+
+    const totalPoints = Number(totals[0]?.totalPoints ?? 0)
+    const totalStories = Number(totals[0]?.totalStories ?? 0)
+
+    const [completedRows] = await pool.query(
+      `
+        SELECT DATE(completed_at) AS completed_date, SUM(estimate) AS points
+        FROM archived_stories
+        WHERE release_id = ? AND completed_at BETWEEN ? AND ?
+        GROUP BY DATE(completed_at)
+        ORDER BY completed_date ASC
+      `,
+      [releaseId, fromBoundary, toBoundary]
+    )
+
+    const completedMap = new Map()
+    completedRows.forEach((row) => {
+      const dateKey = new Date(row.completed_date).toISOString().slice(0, 10)
+      completedMap.set(dateKey, Number(row.points ?? 0))
+    })
+
+    const series = []
+    let cumulative = 0
+    for (let day = new Date(fromBoundary); day <= toBoundary; day = new Date(day.getTime() + DAY_MS)) {
+      const dateKey = day.toISOString().slice(0, 10)
+      const completedPoints = Number(completedMap.get(dateKey) ?? 0)
+      cumulative += completedPoints
+      const remainingPoints = Math.max(totalPoints - cumulative, 0)
+      series.push({
+        date: dateKey,
+        completedPoints,
+        cumulativeCompleted: cumulative,
+        remainingPoints,
+      })
+    }
+
+    return res.json({
+      release: {
+        id: release.id,
+        name: release.name,
+        releaseDate: release.release_date,
+        createdAt: release.created_at,
+      },
+      range: {
+        from: fromBoundary.toISOString(),
+        to: toBoundary.toISOString(),
+      },
+      totalPoints,
+      totalStories,
+      series,
+    })
+  } catch (error) {
+    console.error('[analytics:release-burndown]', error)
     return res.status(500).json({ message: 'internal error' })
   }
 })

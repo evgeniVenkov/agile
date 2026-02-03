@@ -204,6 +204,27 @@ export const ensureSchema = async () => {
   } catch (error) {
     console.warn('Migration warning:', error.message)
   }
-}
 
+  // Migration: add release_id to archived_stories if it doesn't exist
+  try {
+    const [columns] = await pool.query(`
+      SELECT COLUMN_NAME 
+      FROM INFORMATION_SCHEMA.COLUMNS 
+      WHERE TABLE_SCHEMA = DATABASE() 
+      AND TABLE_NAME = 'archived_stories' 
+      AND COLUMN_NAME = 'release_id'
+    `)
+
+    if (columns.length === 0) {
+      await pool.query(`
+        ALTER TABLE archived_stories 
+        ADD COLUMN release_id INT UNSIGNED,
+        ADD CONSTRAINT fk_archived_release FOREIGN KEY (release_id) REFERENCES releases (id) ON DELETE SET NULL
+      `)
+      console.log('Migration: added release_id column to archived_stories table')
+    }
+  } catch (error) {
+    console.warn('Migration warning:', error.message)
+  }
+}
 

@@ -24,6 +24,7 @@ import {
   deleteStory as deleteStoryApi,
   completeStory as completeStoryApi,
   fetchArchiveAnalytics,
+  fetchReleaseBurndown,
   deleteArchivedStory,
   updateUserSettings,
   updateStory,
@@ -82,6 +83,7 @@ const isEditingProjectName = ref(false)
 const releases = ref([])
 const releaseForm = reactive({ name: '', date: '' })
 const releaseError = ref('')
+const releaseBurndownError = ref('')
 const releaseStoryDrafts = reactive({})
 const storyForm = reactive({
   title: '',
@@ -114,6 +116,7 @@ const settingsError = ref('')
 const settingsSuccess = ref('')
 const isBoardLoading = ref(false)
 const isArchiveLoading = ref(false)
+const isReleaseBurndownLoading = ref(false)
 const isProjectsLoading = ref(false)
 const showProjectModal = ref(false)
 const projectMembers = ref([])
@@ -146,6 +149,16 @@ const archiveData = reactive({
   stories: [],
   range: null,
 })
+
+const releaseBurndown = reactive({
+  release: null,
+  range: null,
+  totalPoints: 0,
+  totalStories: 0,
+  series: [],
+})
+
+const selectedReleaseId = ref(null)
 
 const collapsedColumns = reactive(
   statusOptions.reduce((acc, status) => {
@@ -247,6 +260,21 @@ const loadReleases = async () => {
   try {
     const data = await fetchReleasesApi(currentProject.value, currentUser.value.id)
     releases.value = data?.releases ?? []
+    if (releases.value.length) {
+      const selectedStillExists = releases.value.some(
+        (release) => Number(release.id) === Number(selectedReleaseId.value)
+      )
+      if (!selectedStillExists) {
+        selectedReleaseId.value = releases.value[0].id
+      }
+    } else {
+      selectedReleaseId.value = null
+      releaseBurndown.release = null
+      releaseBurndown.range = null
+      releaseBurndown.totalPoints = 0
+      releaseBurndown.totalStories = 0
+      releaseBurndown.series = []
+    }
   } catch (error) {
     releaseError.value = error.message || 'Не удалось загрузить релизы.'
     releases.value = []
@@ -436,6 +464,42 @@ const loadArchiveAnalytics = async () => {
   }
 }
 
+const loadReleaseBurndown = async () => {
+  if (!currentUser.value || !selectedReleaseId.value) {
+    releaseBurndown.release = null
+    releaseBurndown.range = null
+    releaseBurndown.totalPoints = 0
+    releaseBurndown.totalStories = 0
+    releaseBurndown.series = []
+    return
+  }
+
+  releaseBurndownError.value = ''
+  isReleaseBurndownLoading.value = true
+  try {
+    const data = await fetchReleaseBurndown({
+      releaseId: selectedReleaseId.value,
+      userId: currentUser.value.id,
+    })
+    releaseBurndown.release = data.release ?? null
+    releaseBurndown.range = data.range ?? null
+    releaseBurndown.totalPoints = data.totalPoints ?? 0
+    releaseBurndown.totalStories = data.totalStories ?? 0
+    releaseBurndown.series = data.series ?? []
+  } catch (error) {
+    console.error('Error loading release burndown:', error)
+    releaseBurndownError.value =
+      error.message || 'Не удалось загрузить выгорание релиза.'
+    releaseBurndown.release = null
+    releaseBurndown.range = null
+    releaseBurndown.totalPoints = 0
+    releaseBurndown.totalStories = 0
+    releaseBurndown.series = []
+  } finally {
+    isReleaseBurndownLoading.value = false
+  }
+}
+
 onMounted(async () => {
   if (currentUser.value) {
     try {
@@ -473,6 +537,10 @@ watch(
     loadArchiveAnalytics()
   }
 )
+
+watch(selectedReleaseId, () => {
+  loadReleaseBurndown()
+})
 
 watch(currentPage, (value) => {
   if (value === 'archive' && userRole.value === 'admin') {
@@ -522,6 +590,42 @@ const analytics = computed(() => {
     storyPoints,
     tasksTotal,
     tasksDone,
+  }
+})
+
+const releaseBurndownPlot = computed(() => {
+  const series = releaseBurndown.series ?? []
+  if (!series.length) return null
+
+  const width = 600
+  const height = 240
+  const padding = 32
+  const maxValue = Math.max(
+    releaseBurndown.totalPoints || 0,
+    ...series.map((point) => Number(point.remainingPoints ?? 0))
+  )
+  const safeMax = maxValue > 0 ? maxValue : 1
+
+  const points = series.map((point, index) => {
+    const progress = series.length === 1 ? 0 : index / (series.length - 1)
+    const x = padding + (width - padding * 2) * progress
+    const ratio = Number(point.remainingPoints ?? 0) / safeMax
+    const y = padding + (height - padding * 2) * (1 - ratio)
+    return {
+      x,
+      y,
+      date: point.date,
+      value: Number(point.remainingPoints ?? 0),
+    }
+  })
+
+  return {
+    width,
+    height,
+    padding,
+    maxValue: safeMax,
+    points,
+    polyline: points.map((point) => `${point.x},${point.y}`).join(' '),
   }
 })
 
@@ -963,7 +1067,7 @@ const toggleColumn = (columnValue) => {
               <input
                 v-model="loginForm.password"
                 :type="showLoginPassword ? 'text' : 'password'"
-                placeholder="••••••"
+                placeholder="вЂўвЂўвЂўвЂўвЂўвЂў"
               />
               <button
                 type="button"
@@ -971,7 +1075,7 @@ const toggleColumn = (columnValue) => {
                 :aria-label="showLoginPassword ? 'Скрыть пароль' : 'Показать пароль'"
                 @click="showLoginPassword = !showLoginPassword"
               >
-                {{ showLoginPassword ? '🙈' : '👁️' }}
+                {{ showLoginPassword ? 'рџ™€' : 'рџ‘ЃпёЏ' }}
               </button>
             </div>
           </label>
@@ -1129,7 +1233,7 @@ const toggleColumn = (columnValue) => {
                 @click="isPanelCollapsed = !isPanelCollapsed"
                 :aria-label="isPanelCollapsed ? 'Развернуть' : 'Свернуть'"
               >
-                {{ isPanelCollapsed ? '▼' : '▲' }}
+                {{ isPanelCollapsed ? 'в–ј' : 'в–І' }}
               </button>
             </div>
             <form v-show="!isPanelCollapsed" class="story-form" @submit.prevent="addStory">
@@ -1268,7 +1372,7 @@ const toggleColumn = (columnValue) => {
                         @click="saveEstimate(story.id)"
                         title="Сохранить"
                       >
-                        ✓
+                        вњ“
                       </button>
                       <button
                         class="estimate-cancel"
@@ -1276,7 +1380,7 @@ const toggleColumn = (columnValue) => {
                         @click="cancelEditingEstimate(story.id)"
                         title="Отмена"
                       >
-                        ✕
+                        вњ•
                       </button>
                     </div>
                     <span class="tag secondary">
@@ -1408,7 +1512,7 @@ const toggleColumn = (columnValue) => {
                               >
                                 <option :value="null">Не назначено</option>
                                 <option v-if="currentUser" :value="currentUser.id">
-                                  {{ currentUser.username }} (Я)
+                                  {{ currentUser.username }} (РЇ)
                                 </option>
                                 <option
                                   v-for="member in availableMembersForAssignment"
@@ -1451,7 +1555,7 @@ const toggleColumn = (columnValue) => {
                         type="button"
                         @click="removeTask(story.id, task.id)"
                       >
-                        ✕
+                        вњ•
                       </button>
                     </li>
                   </ul>
@@ -1543,6 +1647,77 @@ const toggleColumn = (columnValue) => {
           </p>
         </div>
 
+        <div class="panel burndown-panel" v-if="canViewAnalytics">
+        <h2>Выгорание релиза</h2>
+        <div class="filters">
+          <label>
+            Релиз
+            <select v-model="selectedReleaseId">
+              <option :value="null">Выберите релиз</option>
+              <option v-for="release in releases" :key="release.id" :value="release.id">
+                { release.name } ? { new Date(release.releaseDate).toLocaleDateString('ru-RU') }
+              </option>
+            </select>
+          </label>
+          <button class="ghost-btn" type="button" @click="loadReleaseBurndown">Обновить</button>
+        </div>
+        <p class="muted" v-if="releaseBurndown.range">
+          Период: { new Date(releaseBurndown.range.from).toLocaleDateString('ru-RU') } ?
+          { new Date(releaseBurndown.range.to).toLocaleDateString('ru-RU') }
+        </p>
+        <p v-if="isReleaseBurndownLoading" class="muted">Строим график...</p>
+        <p v-if="releaseBurndownError" class="error">{ releaseBurndownError }</p>
+
+        <div v-if="releaseBurndownPlot" class="burndown-chart">
+          <svg
+            :viewBox="`0 0 ${releaseBurndownPlot.width} ${releaseBurndownPlot.height}`"
+            role="img"
+            aria-label="Release burndown chart"
+            class="burndown-svg"
+          >
+            <line
+              :x1="releaseBurndownPlot.padding"
+              :x2="releaseBurndownPlot.width - releaseBurndownPlot.padding"
+              :y1="releaseBurndownPlot.height - releaseBurndownPlot.padding"
+              :y2="releaseBurndownPlot.height - releaseBurndownPlot.padding"
+              class="burndown-axis-line"
+            />
+            <polyline :points="releaseBurndownPlot.polyline" class="burndown-line" />
+            <circle
+              v-for="point in releaseBurndownPlot.points"
+              :key="point.date"
+              :cx="point.x"
+              :cy="point.y"
+              r="3"
+              class="burndown-dot"
+            />
+          </svg>
+          <div class="burndown-axis">
+            <span>
+              { releaseBurndownPlot.points[0]?.date
+                ? new Date(releaseBurndownPlot.points[0].date).toLocaleDateString('ru-RU')
+                : '' }
+            </span>
+            <span>
+              {{
+                releaseBurndownPlot.points[releaseBurndownPlot.points.length - 1]?.date
+                  ? new Date(
+                      releaseBurndownPlot.points[releaseBurndownPlot.points.length - 1].date
+                    ).toLocaleDateString('ru-RU')
+                  : ''
+              }}
+            </span>
+          </div>
+          <div class="burndown-legend">
+            <span class="tag">Всего: {{ releaseBurndown.totalPoints }} SP</span>
+            <span class="tag secondary">
+              Осталось: {{ releaseBurndownPlot.points[releaseBurndownPlot.points.length - 1]?.value ?? 0 }} SP
+            </span>
+          </div>
+        </div>
+        <div v-else class="empty">Выберите релиз, чтобы построить график.</div>
+      </div>
+
         <div class="stats archive-stats">
           <div>
             <p class="eyebrow">Архивировано историй</p>
@@ -1627,7 +1802,7 @@ const toggleColumn = (columnValue) => {
                   :aria-label="showSettingsPassword ? 'Скрыть пароль' : 'Показать пароль'"
                   @click="showSettingsPassword = !showSettingsPassword"
                 >
-                  {{ showSettingsPassword ? '🙈' : '👁️' }}
+                  {{ showSettingsPassword ? 'рџ™€' : 'рџ‘ЃпёЏ' }}
                 </button>
               </div>
               <span class="optional">Оставьте пустым, если не нужно менять пароль</span>
@@ -1695,7 +1870,7 @@ const toggleColumn = (columnValue) => {
                     @click="handleRemoveMember(member.userId)"
                     title="Удалить из проекта"
                   >
-                    ✕
+                    вњ•
                   </button>
                 </div>
               </div>
@@ -2228,6 +2403,61 @@ textarea {
 
 .archive-panel .filters label {
   flex: 1 1 140px;
+}
+
+.burndown-panel .filters {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+
+.burndown-panel .filters label {
+  flex: 1 1 200px;
+}
+
+.burndown-chart {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.burndown-svg {
+  width: 100%;
+  height: auto;
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  padding: 8px;
+}
+
+.burndown-axis-line {
+  stroke: #e2e8f0;
+  stroke-width: 1;
+}
+
+.burndown-line {
+  fill: none;
+  stroke: #6366f1;
+  stroke-width: 2.5;
+}
+
+.burndown-dot {
+  fill: #6366f1;
+}
+
+.burndown-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.burndown-legend {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .archive-stats {
