@@ -131,6 +131,56 @@ export const ensureSchema = async () => {
     console.warn('Migration warning:', error.message)
   }
 
+  // Migration: add releases table if it doesn't exist
+  try {
+    const [tables] = await pool.query(`
+      SELECT TABLE_NAME 
+      FROM INFORMATION_SCHEMA.TABLES 
+      WHERE TABLE_SCHEMA = DATABASE() 
+      AND TABLE_NAME = 'releases'
+    `)
+    
+    if (tables.length === 0) {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS releases (
+          id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+          project_id INT UNSIGNED NOT NULL,
+          name VARCHAR(255) NOT NULL,
+          release_date DATE NOT NULL,
+          created_by INT UNSIGNED NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT fk_release_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE,
+          CONSTRAINT fk_release_creator FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE CASCADE
+        )
+      `)
+      console.log('Migration: added releases table')
+    }
+  } catch (error) {
+    console.warn('Migration warning:', error.message)
+  }
+
+  // Migration: add release_id to stories if it doesn't exist
+  try {
+    const [columns] = await pool.query(`
+      SELECT COLUMN_NAME 
+      FROM INFORMATION_SCHEMA.COLUMNS 
+      WHERE TABLE_SCHEMA = DATABASE() 
+      AND TABLE_NAME = 'stories' 
+      AND COLUMN_NAME = 'release_id'
+    `)
+    
+    if (columns.length === 0) {
+      await pool.query(`
+        ALTER TABLE stories 
+        ADD COLUMN release_id INT UNSIGNED,
+        ADD CONSTRAINT fk_story_release FOREIGN KEY (release_id) REFERENCES releases (id) ON DELETE SET NULL
+      `)
+      console.log('Migration: added release_id column to stories table')
+    }
+  } catch (error) {
+    console.warn('Migration warning:', error.message)
+  }
+
   // Migration: add assignment fields to story_tasks if they don't exist
   try {
     const [columns] = await pool.query(`
@@ -155,6 +205,5 @@ export const ensureSchema = async () => {
     console.warn('Migration warning:', error.message)
   }
 }
-
 
 

@@ -27,6 +27,17 @@ CREATE TABLE IF NOT EXISTS project_members (
   UNIQUE KEY unique_project_user (project_id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS releases (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  project_id INT UNSIGNED NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  release_date DATE NOT NULL,
+  created_by INT UNSIGNED NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_release_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE,
+  CONSTRAINT fk_release_creator FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS stories (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   title VARCHAR(255) NOT NULL,
@@ -35,9 +46,11 @@ CREATE TABLE IF NOT EXISTS stories (
   status ENUM('backlog', 'ready', 'in-progress', 'done') NOT NULL DEFAULT 'backlog',
   owner_id INT UNSIGNED NOT NULL,
   project_id INT UNSIGNED,
+  release_id INT UNSIGNED,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_story_owner FOREIGN KEY (owner_id) REFERENCES users (id) ON DELETE CASCADE,
-  CONSTRAINT fk_story_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE SET NULL
+  CONSTRAINT fk_story_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE SET NULL,
+  CONSTRAINT fk_story_release FOREIGN KEY (release_id) REFERENCES releases (id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS story_tasks (
@@ -65,4 +78,3 @@ CREATE TABLE IF NOT EXISTS archived_stories (
   tasks_json JSON NOT NULL,
   completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-

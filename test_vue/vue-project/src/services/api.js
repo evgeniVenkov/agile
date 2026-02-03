@@ -33,6 +33,18 @@ export const createProject = (payload) =>
 export const updateProjectName = (id, name, userId) =>
   request(`/api/projects/${id}`, { method: 'PATCH', body: JSON.stringify({ name, userId }) })
 
+export const fetchReleases = (projectId, userId) =>
+  request(`/api/releases?projectId=${projectId}&userId=${userId}`)
+
+export const createRelease = (payload) =>
+  request('/api/releases', { method: 'POST', body: JSON.stringify(payload) })
+
+export const addStoryToRelease = (releaseId, storyId, userId) =>
+  request(`/api/releases/${releaseId}/stories`, {
+    method: 'POST',
+    body: JSON.stringify({ storyId, userId }),
+  })
+
 export const fetchProjectMembers = (projectId, userId) => {
   const query = userId ? `?userId=${userId}` : ''
   return request(`/api/projects/${projectId}/members${query}`)

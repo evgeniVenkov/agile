@@ -6,6 +6,9 @@ import {
   fetchProjects,
   createProject,
   updateProjectName as updateProjectNameApi,
+  fetchReleases as fetchReleasesApi,
+  createRelease as createReleaseApi,
+  addStoryToRelease as addStoryToReleaseApi,
   fetchProjectMembers,
   addProjectMember,
   removeProjectMember,
@@ -76,6 +79,10 @@ const registerForm = reactive({ username: '', password: '', role: 'frontend-deve
 const projectForm = reactive({ name: '', description: '' })
 const projectNameDraft = ref('')
 const isEditingProjectName = ref(false)
+const releases = ref([])
+const releaseForm = reactive({ name: '', date: '' })
+const releaseError = ref('')
+const releaseStoryDrafts = reactive({})
 const storyForm = reactive({
   title: '',
   description: '',
@@ -126,6 +133,7 @@ const today = new Date()
 const isoDate = (date) => date.toISOString().slice(0, 10)
 const defaultArchiveTo = isoDate(today)
 const defaultArchiveFrom = isoDate(new Date(today.getTime() - 29 * 24 * 60 * 60 * 1000))
+releaseForm.date = defaultArchiveTo
 
 const archiveFilters = reactive({
   from: defaultArchiveFrom,
@@ -223,6 +231,70 @@ const handleSelectProject = async () => {
   await loadStories()
   if (currentProject.value && userRole.value === 'admin') {
     await loadProjectMembers()
+  }
+  if (currentProject.value && userRole.value === 'admin' && currentPage.value === 'archive') {
+    await loadReleases()
+  }
+}
+
+const loadReleases = async () => {
+  releaseError.value = ''
+  if (!currentUser.value || !currentProject.value || userRole.value !== 'admin') {
+    releases.value = []
+    return
+  }
+
+  try {
+    const data = await fetchReleasesApi(currentProject.value, currentUser.value.id)
+    releases.value = data?.releases ?? []
+  } catch (error) {
+    releaseError.value = error.message || 'Не удалось загрузить релизы.'
+    releases.value = []
+  }
+}
+
+const createRelease = async () => {
+  releaseError.value = ''
+  if (!currentUser.value || !currentProject.value) return
+
+  const name = releaseForm.name.trim()
+  const date = releaseForm.date
+
+  if (!name) {
+    releaseError.value = 'Введите название релиза.'
+    return
+  }
+  if (!date) {
+    releaseError.value = 'Выберите дату релиза.'
+    return
+  }
+
+  try {
+    await createReleaseApi({
+      projectId: currentProject.value,
+      userId: currentUser.value.id,
+      name,
+      releaseDate: date,
+    })
+    releaseForm.name = ''
+    releaseForm.date = defaultArchiveTo
+    await loadReleases()
+  } catch (error) {
+    releaseError.value = error.message || 'Не удалось создать релиз.'
+  }
+}
+
+const addStoryToRelease = async (releaseId) => {
+  if (!currentUser.value) return
+  const storyId = releaseStoryDrafts[releaseId]
+  if (!storyId) return
+
+  try {
+    await addStoryToReleaseApi(releaseId, storyId, currentUser.value.id)
+    releaseStoryDrafts[releaseId] = null
+    await loadStories()
+  } catch (error) {
+    releaseError.value = error.message || 'Не удалось добавить историю в релиз.'
   }
 }
 
@@ -402,11 +474,20 @@ watch(
   }
 )
 
+watch(currentPage, (value) => {
+  if (value === 'archive' && userRole.value === 'admin') {
+    loadReleases()
+  }
+})
+
 watch(currentProject, () => {
   if (currentUser.value) {
     loadStories()
     // Загружаем участников проекта для всех пользователей (для назначения задач)
     loadProjectMembers()
+    if (currentPage.value === 'archive' && userRole.value === 'admin') {
+      loadReleases()
+    }
   }
 })
 
@@ -443,6 +524,13 @@ const analytics = computed(() => {
     tasksDone,
   }
 })
+
+const availableStoriesForRelease = computed(() =>
+  stories.value.filter((story) => story.releaseId === null || story.releaseId === undefined)
+)
+
+const storiesInRelease = (releaseId) =>
+  stories.value.filter((story) => Number(story.releaseId) === Number(releaseId))
 
 const userRoleLabel = computed(() => {
   return getRoleLabel(userRole.value)
@@ -1388,6 +1476,54 @@ const toggleColumn = (columnValue) => {
       </div>
 
       <div v-else-if="currentPage === 'archive'" class="archive-view">
+        <div v-if="userRole === 'admin' && currentProject" class="panel release-panel">
+          <h2>Релизы</h2>
+          <div class="release-form">
+            <label>
+              Название релиза
+              <input v-model="releaseForm.name" placeholder="Например, Sprint 12" />
+            </label>
+            <label>
+              Дата релиза
+              <input v-model="releaseForm.date" type="date" />
+            </label>
+            <button class="primary small" type="button" @click="createRelease">Создать релиз</button>
+          </div>
+          <p v-if="releaseError" class="error">{{ releaseError }}</p>
+          <div v-if="!releases.length" class="muted">Релизов пока нет.</div>
+          <div v-else class="release-list">
+            <article v-for="release in releases" :key="release.id" class="release-card">
+              <div class="release-header">
+                <div>
+                  <p class="release-title">{{ release.name }}</p>
+                  <p class="release-date">
+                    Дата: {{ new Date(release.releaseDate).toLocaleDateString('ru-RU') }}
+                  </p>
+                </div>
+              </div>
+              <div class="release-stories">
+                <p v-if="!storiesInRelease(release.id).length" class="muted">Историй нет.</p>
+                <ul v-else class="release-story-list">
+                  <li v-for="story in storiesInRelease(release.id)" :key="story.id">
+                    {{ story.title }}
+                  </li>
+                </ul>
+              </div>
+              <div class="release-add">
+                <select v-model="releaseStoryDrafts[release.id]">
+                  <option :value="null">Выберите историю</option>
+                  <option v-for="story in availableStoriesForRelease" :key="story.id" :value="story.id">
+                    {{ story.title }}
+                  </option>
+                </select>
+                <button class="ghost-btn" type="button" @click="addStoryToRelease(release.id)">
+                  Добавить
+                </button>
+              </div>
+            </article>
+          </div>
+        </div>
+
         <div class="panel archive-panel">
           <h2>Аналитика архива</h2>
           <div class="filters">
@@ -1872,6 +2008,76 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 24px;
+}
+
+.release-panel h2 {
+  margin-top: 0;
+}
+
+.release-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.release-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.release-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 16px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.release-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.release-title {
+  font-weight: 600;
+  margin: 0;
+}
+
+.release-date {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.release-stories {
+  background: #fff;
+  border-radius: 12px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.release-story-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.release-add {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.release-add select {
+  min-width: 220px;
 }
 
 .settings-view {

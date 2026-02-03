@@ -22,6 +22,7 @@ const mapStories = (rows) => {
         status: row.story_status,
         owner: row.story_owner,
         ownerId: row.owner_id,
+        releaseId: row.story_release_id ?? null,
         createdAt: row.story_created_at,
         tasks: [],
       })
@@ -514,6 +515,160 @@ app.delete('/api/projects/:id/members/:userId', async (req, res) => {
   }
 })
 
+app.get('/api/releases', async (req, res) => {
+  try {
+    const { projectId, userId } = req.query
+
+    if (!projectId || !userId) {
+      return res.status(400).json({ message: 'projectId and userId required' })
+    }
+
+    const role = await getUserRole(userId)
+    if (!hasPermission(role, ['admin'])) {
+      return res.status(403).json({ message: 'insufficient permissions' })
+    }
+
+    const isMember = await isProjectMember(userId, projectId)
+    if (!isMember) {
+      return res.status(403).json({ message: 'access denied: not a project member' })
+    }
+
+    const [rows] = await pool.query(
+      `SELECT id, project_id, name, release_date, created_by, created_at
+       FROM releases
+       WHERE project_id = ?
+       ORDER BY release_date DESC, created_at DESC`,
+      [projectId]
+    )
+
+    return res.json({
+      releases: rows.map((row) => ({
+        id: row.id,
+        projectId: row.project_id,
+        name: row.name,
+        releaseDate: row.release_date,
+        createdBy: row.created_by,
+        createdAt: row.created_at,
+      })),
+    })
+  } catch (error) {
+    console.error('[releases:list]', error)
+    return res.status(500).json({ message: 'internal error' })
+  }
+})
+
+app.post('/api/releases', async (req, res) => {
+  try {
+    const { projectId, userId, name, releaseDate } = req.body ?? {}
+
+    if (!projectId || !userId) {
+      return res.status(400).json({ message: 'projectId and userId required' })
+    }
+
+    const role = await getUserRole(userId)
+    if (!hasPermission(role, ['admin'])) {
+      return res.status(403).json({ message: 'insufficient permissions' })
+    }
+
+    const isMember = await isProjectMember(userId, projectId)
+    if (!isMember) {
+      return res.status(403).json({ message: 'access denied: not a project member' })
+    }
+
+    const normalizedName = String(name ?? '').trim()
+    if (!normalizedName) {
+      return res.status(400).json({ message: 'name required' })
+    }
+
+    const normalizedDate = parseDateParam(releaseDate)
+    if (!normalizedDate) {
+      return res.status(400).json({ message: 'releaseDate required' })
+    }
+
+    const releaseDateValue = normalizedDate.toISOString().slice(0, 10)
+
+    const [result] = await pool.query(
+      `INSERT INTO releases (project_id, name, release_date, created_by)
+       VALUES (?, ?, ?, ?)`,
+      [projectId, normalizedName, releaseDateValue, userId]
+    )
+
+    const [rows] = await pool.query(
+      `SELECT id, project_id, name, release_date, created_by, created_at
+       FROM releases
+       WHERE id = ?`,
+      [result.insertId]
+    )
+
+    if (!rows.length) {
+      return res.status(500).json({ message: 'failed to create release' })
+    }
+
+    const release = rows[0]
+    return res.status(201).json({
+      id: release.id,
+      projectId: release.project_id,
+      name: release.name,
+      releaseDate: release.release_date,
+      createdBy: release.created_by,
+      createdAt: release.created_at,
+    })
+  } catch (error) {
+    console.error('[releases:create]', error)
+    return res.status(500).json({ message: 'internal error' })
+  }
+})
+
+app.post('/api/releases/:id/stories', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { storyId, userId } = req.body ?? {}
+
+    if (!storyId || !userId) {
+      return res.status(400).json({ message: 'storyId and userId required' })
+    }
+
+    const role = await getUserRole(userId)
+    if (!hasPermission(role, ['admin'])) {
+      return res.status(403).json({ message: 'insufficient permissions' })
+    }
+
+    const [releaseRows] = await pool.query(
+      'SELECT id, project_id FROM releases WHERE id = ?',
+      [id]
+    )
+    if (!releaseRows.length) {
+      return res.status(404).json({ message: 'release not found' })
+    }
+
+    const release = releaseRows[0]
+    const isMember = await isProjectMember(userId, release.project_id)
+    if (!isMember) {
+      return res.status(403).json({ message: 'access denied: not a project member' })
+    }
+
+    const [storyRows] = await pool.query(
+      'SELECT id, project_id FROM stories WHERE id = ?',
+      [storyId]
+    )
+    if (!storyRows.length) {
+      return res.status(404).json({ message: 'story not found' })
+    }
+
+    const story = storyRows[0]
+    if (Number(story.project_id) !== Number(release.project_id)) {
+      return res.status(400).json({ message: 'story does not belong to release project' })
+    }
+
+    await pool.query('UPDATE stories SET release_id = ? WHERE id = ?', [id, storyId])
+
+    return res.json({ ok: true })
+  } catch (error) {
+    console.error('[releases:add-story]', error)
+    return res.status(500).json({ message: 'internal error' })
+  }
+})
+
 app.get('/api/stories', async (req, res) => {
   try {
     const { projectId, userId } = req.query
@@ -532,6 +687,7 @@ app.get('/api/stories', async (req, res) => {
         s.created_at AS story_created_at,
         s.owner_id,
         s.project_id,
+        s.release_id AS story_release_id,
         u.username AS story_owner,
         t.id AS task_id,
         t.title AS task_title,
