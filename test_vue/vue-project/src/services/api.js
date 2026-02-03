@@ -30,6 +30,9 @@ export const fetchProjects = (userId) => {
 export const createProject = (payload) =>
   request('/api/projects', { method: 'POST', body: JSON.stringify(payload) })
 
+export const updateProjectName = (id, name, userId) =>
+  request(`/api/projects/${id}`, { method: 'PATCH', body: JSON.stringify({ name, userId }) })
+
 export const fetchProjectMembers = (projectId, userId) => {
   const query = userId ? `?userId=${userId}` : ''
   return request(`/api/projects/${projectId}/members${query}`)

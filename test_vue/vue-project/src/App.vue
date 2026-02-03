@@ -5,6 +5,7 @@ import {
   loginUser,
   fetchProjects,
   createProject,
+  updateProjectName as updateProjectNameApi,
   fetchProjectMembers,
   addProjectMember,
   removeProjectMember,
@@ -73,6 +74,8 @@ const authMode = ref('login')
 const loginForm = reactive({ username: '', password: '' })
 const registerForm = reactive({ username: '', password: '', role: 'frontend-developer' })
 const projectForm = reactive({ name: '', description: '' })
+const projectNameDraft = ref('')
+const isEditingProjectName = ref(false)
 const storyForm = reactive({
   title: '',
   description: '',
@@ -216,9 +219,40 @@ const handleCreateProject = async () => {
 }
 
 const handleSelectProject = async () => {
+  cancelEditingProjectName()
   await loadStories()
   if (currentProject.value && userRole.value === 'admin') {
     await loadProjectMembers()
+  }
+}
+
+const startEditingProjectName = () => {
+  const project = projects.value.find((p) => p.id === currentProject.value)
+  if (!project) return
+  projectNameDraft.value = project.name
+  isEditingProjectName.value = true
+}
+
+const cancelEditingProjectName = () => {
+  isEditingProjectName.value = false
+  projectNameDraft.value = ''
+}
+
+const saveProjectName = async () => {
+  if (!currentUser.value || !currentProject.value) return
+  const name = projectNameDraft.value.trim()
+  if (!name) {
+    projectError.value = 'Введите название проекта.'
+    return
+  }
+
+  try {
+    await updateProjectNameApi(currentProject.value, name, currentUser.value.id)
+    isEditingProjectName.value = false
+    projectNameDraft.value = ''
+    await loadProjects()
+  } catch (error) {
+    projectError.value = error.message || 'Не удалось обновить название проекта.'
   }
 }
 
@@ -895,6 +929,27 @@ const toggleColumn = (columnValue) => {
               </option>
             </select>
           </label>
+          <template v-if="userRole === 'admin' && currentProject">
+            <button
+              v-if="!isEditingProjectName"
+              class="ghost-btn"
+              type="button"
+              @click="startEditingProjectName"
+            >
+              Переименовать
+            </button>
+            <div v-else class="project-edit">
+              <input
+                v-model="projectNameDraft"
+                class="project-edit-input"
+                placeholder="Новое название проекта"
+              />
+              <button class="ghost-btn" type="button" @click="saveProjectName">Сохранить</button>
+              <button class="ghost-btn danger" type="button" @click="cancelEditingProjectName">
+                Отмена
+              </button>
+            </div>
+          </template>
           <button class="primary small" type="button" @click="showProjectModal = true">
             + Создать проект
           </button>
@@ -1067,7 +1122,13 @@ const toggleColumn = (columnValue) => {
                         />
                       </template>
                       <template v-else>
-                        <p class="story-title">{{ story.title }}</p>
+                        <p
+                          class="story-title"
+                          :class="{ 'story-editable': canEditStory(story) }"
+                          @click="canEditStory(story) && startEditingStory(story)"
+                        >
+                          {{ story.title }}
+                        </p>
                         <p class="story-owner">Автор: {{ story.owner }}</p>
                       </template>
                     </div>
@@ -1084,7 +1145,14 @@ const toggleColumn = (columnValue) => {
                       </option>
                     </select>
                   </div>
-                  <p v-if="editingStoryId !== story.id" class="story-description">{{ story.description }}</p>
+                  <p
+                    v-if="editingStoryId !== story.id"
+                    class="story-description"
+                    :class="{ 'story-editable': canEditStory(story) }"
+                    @click="canEditStory(story) && startEditingStory(story)"
+                  >
+                    {{ story.description }}
+                  </p>
                   <div class="story-meta">
                     <span
                       v-if="editingEstimate !== story.id"
@@ -1206,14 +1274,13 @@ const toggleColumn = (columnValue) => {
                               </button>
                             </template>
                             <template v-else>
-                              <span :class="{ done: task.done }">{{ task.title }}</span>
-                              <button
-                                class="task-title-edit"
-                                type="button"
+                              <span
+                                :class="{ done: task.done }"
+                                class="task-title-text"
                                 @click="startEditingTaskTitle(story.id, task.id, task)"
                               >
-                                Редактировать
-                              </button>
+                                {{ task.title }}
+                              </span>
                             </template>
                           </div>
                         </label>
@@ -1600,6 +1667,21 @@ const toggleColumn = (columnValue) => {
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
+}
+
+.project-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.project-edit-input {
+  min-width: 220px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #d0d5dd;
+  font: inherit;
 }
 
 .project-label {
@@ -2138,6 +2220,10 @@ textarea {
   margin: 0;
 }
 
+.story-editable {
+  cursor: text;
+}
+
 .story-owner {
   font-size: 0.85rem;
   color: #94a3b8;
@@ -2336,7 +2422,6 @@ textarea {
   font: inherit;
 }
 
-.task-title-edit,
 .task-title-save,
 .task-title-cancel {
   border: 1px solid #e2e8f0;
@@ -2346,6 +2431,10 @@ textarea {
   font-size: 0.75rem;
   color: #475467;
   cursor: pointer;
+}
+
+.task-title-text {
+  cursor: text;
 }
 
 .task-title-save:hover {

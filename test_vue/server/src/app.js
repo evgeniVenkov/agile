@@ -276,6 +276,71 @@ app.post('/api/projects', async (req, res) => {
   }
 })
 
+app.patch('/api/projects/:id', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { userId, name } = req.body ?? {}
+
+    if (!userId) {
+      return res.status(401).json({ message: 'userId required' })
+    }
+
+    const role = await getUserRole(userId)
+    if (!hasPermission(role, ['admin'])) {
+      return res.status(403).json({ message: 'access denied' })
+    }
+
+    if (name === undefined) {
+      return res.status(400).json({ message: 'name required' })
+    }
+
+    const normalizedName = String(name ?? '').trim()
+    if (!normalizedName) {
+      return res.status(400).json({ message: 'name cannot be empty' })
+    }
+
+    const [result] = await pool.query('UPDATE projects SET name = ? WHERE id = ?', [
+      normalizedName,
+      id,
+    ])
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: 'project not found' })
+    }
+
+    const [rows] = await pool.query(
+      `SELECT 
+        p.id,
+        p.name,
+        p.description,
+        p.created_by,
+        p.created_at,
+        u.username AS creator_name
+      FROM projects p
+      LEFT JOIN users u ON u.id = p.created_by
+      WHERE p.id = ?`,
+      [id]
+    )
+
+    if (!rows.length) {
+      return res.status(500).json({ message: 'failed to update project' })
+    }
+
+    const project = rows[0]
+    return res.json({
+      id: project.id,
+      name: project.name,
+      description: project.description,
+      createdBy: project.created_by,
+      creatorName: project.creator_name,
+      createdAt: project.created_at,
+    })
+  } catch (error) {
+    console.error('[projects:update]', error)
+    return res.status(500).json({ message: 'internal error' })
+  }
+})
+
 app.get('/api/projects/:id/members', async (req, res) => {
   try {
     const { id } = req.params
