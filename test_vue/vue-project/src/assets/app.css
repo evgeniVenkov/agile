@@ -586,11 +586,48 @@ textarea {
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
 }
 
+.speed-panel {
+  background: #fff;
+  padding: 20px 24px;
+  border-radius: 20px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  margin: 16px 0 24px;
+}
+
+.speed-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.speed-header h3 {
+  margin: 0;
+}
+
+.speed-select {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  background: #f8fafc;
+}
+
+.speed-value {
+  font-size: 1.6rem;
+  margin: 10px 0 6px;
+}
+
 .velocity-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 16px;
   margin-top: 16px;
+}
+
+.quick-filters {
+  margin-top: 12px;
+  gap: 8px;
 }
 
 .velocity-card {

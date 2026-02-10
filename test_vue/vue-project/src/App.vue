@@ -662,10 +662,10 @@ const userRoleLabel = computed(() => {
   return getRoleLabel(userRole.value)
 })
 
-const isTasksCollapsed = (storyId) => !!collapsedTasks[storyId]
+const isTasksCollapsed = (storyId) => collapsedTasks[storyId] !== false
 
 const toggleTasksCollapsed = (storyId) => {
-  collapsedTasks[storyId] = !collapsedTasks[storyId]
+  collapsedTasks[storyId] = !isTasksCollapsed(storyId)
 }
 
 const canDeleteStory = computed(() => {

@@ -81,6 +81,10 @@
         </label>
         <button class="ghost-btn" type="button" @click="emit('loadArchiveAnalytics')">Обновить</button>
       </div>
+      <div class="filters quick-filters">
+        <button class="ghost-btn" type="button" @click="setPreviousWeek">Пред. неделя</button>
+        <button class="ghost-btn" type="button" @click="setPreviousMonth">Пред. месяц</button>
+      </div>
       <p class="muted" v-if="archiveData.range">
         Период: {{ new Date(archiveData.range.from).toLocaleDateString('ru-RU') }} —
         {{ new Date(archiveData.range.to).toLocaleDateString('ru-RU') }}
@@ -181,6 +185,19 @@
       </div>
     </div>
 
+    <div class="speed-panel">
+      <div class="speed-header">
+        <h3>Скорость</h3>
+        <select v-model="velocityUnit" class="speed-select">
+          <option value="period">За период</option>
+          <option value="week">За неделю</option>
+          <option value="month">За месяц</option>
+        </select>
+      </div>
+      <p class="speed-value">{{ speedValue }} SP / {{ velocityUnitLabel }}</p>
+      <p class="muted">Среднее количество выполненных story points за период</p>
+    </div>
+
     <p v-if="isArchiveLoading" class="muted">Строим отчеты...</p>
     <p v-if="archiveError" class="error">{{ archiveError }}</p>
 
@@ -229,7 +246,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 const props = defineProps({
   userRole: {
@@ -319,5 +336,85 @@ const emit = defineEmits([
 const selectedReleaseIdModel = computed({
   get: () => props.selectedReleaseId,
   set: (value) => emit('update:selectedReleaseId', value),
+})
+
+const toIsoDate = (date) => date.toISOString().slice(0, 10)
+
+const setPreviousWeek = () => {
+  const end = new Date()
+  const start = new Date(end.getTime() - 6 * 24 * 60 * 60 * 1000)
+  props.archiveFilters.from = toIsoDate(start)
+  props.archiveFilters.to = toIsoDate(end)
+  emit('loadArchiveAnalytics')
+}
+
+const setPreviousMonth = () => {
+  const end = new Date()
+  const start = new Date(end.getTime() - 29 * 24 * 60 * 60 * 1000)
+  props.archiveFilters.from = toIsoDate(start)
+  props.archiveFilters.to = toIsoDate(end)
+  emit('loadArchiveAnalytics')
+}
+
+const velocityUnit = ref('week')
+const velocityUnitLabel = computed(() => {
+  if (velocityUnit.value === 'period') return 'период'
+  if (velocityUnit.value === 'month') return 'месяц'
+  return 'неделю'
+})
+
+const parseRange = () => {
+  const rawFrom = props.archiveData?.range?.from ?? props.archiveFilters?.from ?? null
+  const rawTo = props.archiveData?.range?.to ?? props.archiveFilters?.to ?? null
+  if (!rawFrom || !rawTo) return null
+
+  let fromDate = new Date(rawFrom)
+  let toDate = new Date(rawTo)
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+    return null
+  }
+  if (fromDate > toDate) {
+    const temp = fromDate
+    fromDate = toDate
+    toDate = temp
+  }
+  return { fromDate, toDate }
+}
+
+const speedValue = computed(() => {
+  const totalPoints = props.archiveData?.summary?.totalPoints ?? 0
+  if (!totalPoints) return '0'
+
+  const range = parseRange()
+  if (!range) return '0'
+
+  const startUtc = Date.UTC(
+    range.fromDate.getUTCFullYear(),
+    range.fromDate.getUTCMonth(),
+    range.fromDate.getUTCDate()
+  )
+  const endUtc = Date.UTC(
+    range.toDate.getUTCFullYear(),
+    range.toDate.getUTCMonth(),
+    range.toDate.getUTCDate()
+  )
+
+  const days = Math.max(1, Math.floor((endUtc - startUtc) / 86400000) + 1)
+
+  let divisor = 1
+  if (velocityUnit.value === 'period') {
+    divisor = 1
+  } else if (velocityUnit.value === 'month') {
+    const startMonth = range.fromDate.getUTCFullYear() * 12 + range.fromDate.getUTCMonth()
+    const endMonth = range.toDate.getUTCFullYear() * 12 + range.toDate.getUTCMonth()
+    divisor = Math.max(1, endMonth - startMonth + 1)
+  } else {
+    divisor = Math.max(1, days / 7)
+  }
+
+  const value = totalPoints / divisor
+  if (!Number.isFinite(value)) return '0'
+  const formatted = value.toFixed(1)
+  return formatted.endsWith('.0') ? formatted.slice(0, -2) : formatted
 })
 </script>
