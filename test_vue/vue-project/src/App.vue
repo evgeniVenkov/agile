@@ -94,7 +94,6 @@ const releaseBurndownError = ref('')
 const releaseStoryDrafts = reactive({})
 const storyForm = reactive({
   title: '',
-  description: '',
   estimate: 3,
   status: 'backlog',
 })
@@ -789,7 +788,6 @@ const addStory = async () => {
   }
 
   const title = storyForm.title.trim()
-  const description = storyForm.description.trim()
   const estimate = Number(storyForm.estimate)
 
   if (!title) {
@@ -800,14 +798,12 @@ const addStory = async () => {
   try {
     await createStory({
       title,
-      description,
       estimate: Number.isFinite(estimate) && estimate > 0 ? estimate : 1,
       status: storyForm.status,
       ownerId: currentUser.value.id,
       projectId: currentProject.value,
     })
     storyForm.title = ''
-    storyForm.description = ''
     storyForm.estimate = 3
     storyForm.status = 'backlog'
     await loadStories()
@@ -840,7 +836,6 @@ const startEditingStory = (story) => {
   editingStoryId.value = story.id
   storyDrafts[story.id] = {
     title: story.title,
-    description: story.description,
   }
 }
 
@@ -857,7 +852,6 @@ const saveStory = async (storyId) => {
   if (!draft) return
 
   const title = draft.title?.trim()
-  const description = draft.description?.trim() ?? ''
 
   if (!title) {
     boardError.value = 'Заполните название истории.'
@@ -867,7 +861,6 @@ const saveStory = async (storyId) => {
   try {
     await updateStory(storyId, {
       title,
-      description,
       userId: currentUser.value.id,
     })
     editingStoryId.value = null

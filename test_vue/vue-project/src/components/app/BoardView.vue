@@ -36,14 +36,6 @@
             Название
             <input v-model="storyForm.title" placeholder="Как пользователь, я хочу..." />
           </label>
-          <label>
-            Описание <span class="optional">(необязательно)</span>
-            <textarea
-              v-model="storyForm.description"
-              rows="4"
-              placeholder="Кратко опишите ценность и критерии (необязательно)"
-            />
-          </label>
           <div class="inline">
             <label>
               Story Points
@@ -101,12 +93,6 @@
                       class="story-edit-input"
                       placeholder="Название истории"
                     />
-                    <textarea
-                      v-model="storyDrafts[story.id].description"
-                      class="story-edit-textarea"
-                      rows="3"
-                      placeholder="Описание"
-                    />
                   </template>
                   <template v-else>
                     <p
@@ -132,14 +118,6 @@
                   </option>
                 </select>
               </div>
-              <p
-                v-if="editingStoryId !== story.id"
-                class="story-description"
-                :class="{ 'story-editable': canEditStory(story) }"
-                @click="canEditStory(story) && emit('startEditingStory', story)"
-              >
-                {{ story.description }}
-              </p>
               <div class="story-meta">
                 <span
                   v-if="editingEstimate !== story.id"

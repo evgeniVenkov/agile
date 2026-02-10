@@ -781,13 +781,7 @@ textarea {
   margin: 0;
 }
 
-.story-description {
-  color: #475467;
-  margin: 0;
-}
-
-.story-edit-input,
-.story-edit-textarea {
+.story-edit-input {
   width: 100%;
   box-sizing: border-box;
   padding: 8px 10px;
@@ -795,10 +789,6 @@ textarea {
   border: 1px solid #cbd5f5;
   font: inherit;
   margin-bottom: 8px;
-}
-
-.story-edit-textarea {
-  resize: vertical;
 }
 
 .story-meta {

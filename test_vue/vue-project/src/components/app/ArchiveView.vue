@@ -215,7 +215,6 @@
             </button>
           </div>
         </div>
-        <p class="story-description">{{ item.description }}</p>
         <ul class="tasks">
           <li v-for="task in item.tasks" :key="task.id ?? task.title">
             <label>
