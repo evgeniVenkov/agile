@@ -188,14 +188,9 @@
     <div class="speed-panel">
       <div class="speed-header">
         <h3>Скорость</h3>
-        <select v-model="velocityUnit" class="speed-select">
-          <option value="period">За период</option>
-          <option value="week">За неделю</option>
-          <option value="month">За месяц</option>
-        </select>
       </div>
-      <p class="speed-value">{{ speedValue }} SP / {{ velocityUnitLabel }}</p>
-      <p class="muted">Среднее количество выполненных story points за период</p>
+      <p class="speed-value">{{ speedValue }} SP / день</p>
+      <p class="muted">Среднее количество выполненных story points за время жизни доски</p>
     </div>
 
     <p v-if="isArchiveLoading" class="muted">Строим отчеты...</p>
@@ -246,7 +241,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 
 const props = defineProps({
   userRole: {
@@ -255,6 +250,10 @@ const props = defineProps({
   },
   currentProject: {
     type: [String, Number],
+    default: null,
+  },
+  currentProjectInfo: {
+    type: Object,
     default: null,
   },
   releaseForm: {
@@ -356,13 +355,6 @@ const setPreviousMonth = () => {
   emit('loadArchiveAnalytics')
 }
 
-const velocityUnit = ref('week')
-const velocityUnitLabel = computed(() => {
-  if (velocityUnit.value === 'period') return 'период'
-  if (velocityUnit.value === 'month') return 'месяц'
-  return 'неделю'
-})
-
 const parseRange = () => {
   const rawFrom = props.archiveData?.range?.from ?? props.archiveFilters?.from ?? null
   const rawTo = props.archiveData?.range?.to ?? props.archiveFilters?.to ?? null
@@ -385,34 +377,28 @@ const speedValue = computed(() => {
   const totalPoints = props.archiveData?.summary?.totalPoints ?? 0
   if (!totalPoints) return '0'
 
-  const range = parseRange()
-  if (!range) return '0'
+  const rawCreatedAt = props.currentProjectInfo?.createdAt ?? null
+  let boardStartDate = rawCreatedAt ? new Date(rawCreatedAt) : null
+  if (!boardStartDate || Number.isNaN(boardStartDate.getTime())) {
+    const range = parseRange()
+    boardStartDate = range?.fromDate ?? null
+  }
+  if (!boardStartDate) return '0'
 
+  const now = new Date()
+  if (boardStartDate > now) {
+    boardStartDate = now
+  }
   const startUtc = Date.UTC(
-    range.fromDate.getUTCFullYear(),
-    range.fromDate.getUTCMonth(),
-    range.fromDate.getUTCDate()
+    boardStartDate.getUTCFullYear(),
+    boardStartDate.getUTCMonth(),
+    boardStartDate.getUTCDate()
   )
-  const endUtc = Date.UTC(
-    range.toDate.getUTCFullYear(),
-    range.toDate.getUTCMonth(),
-    range.toDate.getUTCDate()
-  )
+  const endUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
 
   const days = Math.max(1, Math.floor((endUtc - startUtc) / 86400000) + 1)
 
-  let divisor = 1
-  if (velocityUnit.value === 'period') {
-    divisor = 1
-  } else if (velocityUnit.value === 'month') {
-    const startMonth = range.fromDate.getUTCFullYear() * 12 + range.fromDate.getUTCMonth()
-    const endMonth = range.toDate.getUTCFullYear() * 12 + range.toDate.getUTCMonth()
-    divisor = Math.max(1, endMonth - startMonth + 1)
-  } else {
-    divisor = Math.max(1, days / 7)
-  }
-
-  const value = totalPoints / divisor
+  const value = totalPoints / days
   if (!Number.isFinite(value)) return '0'
   const formatted = value.toFixed(1)
   return formatted.endsWith('.0') ? formatted.slice(0, -2) : formatted

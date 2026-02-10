@@ -137,6 +137,10 @@ const availableMembersForAssignment = computed(() => {
   )
 })
 
+const currentProjectInfo = computed(
+  () => projects.value.find((project) => project.id === currentProject.value) ?? null
+)
+
 const today = new Date()
 const isoDate = (date) => date.toISOString().slice(0, 10)
 const defaultArchiveTo = isoDate(today)
@@ -1152,6 +1156,7 @@ const toggleColumn = (columnValue) => {
         v-model:selectedReleaseId="selectedReleaseId"
         :user-role="userRole"
         :current-project="currentProject"
+        :current-project-info="currentProjectInfo"
         :release-form="releaseForm"
         :release-error="releaseError"
         :releases="releases"
