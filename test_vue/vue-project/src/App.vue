@@ -98,7 +98,6 @@ const storyForm = reactive({
   status: 'backlog',
 })
 const taskDrafts = reactive({})
-const isPanelCollapsed = ref(false)
 const collapsedTasks = reactive({})
 const editingEstimate = ref(null)
 const estimateDrafts = reactive({})
@@ -1109,7 +1108,6 @@ const toggleColumn = (columnValue) => {
         :info-message="infoMessage"
         :story-form="storyForm"
         :story-error="storyError"
-        :is-panel-collapsed="isPanelCollapsed"
         :collapsed-columns="collapsedColumns"
         :editing-story-id="editingStoryId"
         :story-drafts="storyDrafts"
@@ -1126,7 +1124,6 @@ const toggleColumn = (columnValue) => {
         :current-user="currentUser"
         :editing-task-title="editingTaskTitle"
         :task-title-drafts="taskTitleDrafts"
-        @toggle-panel="isPanelCollapsed = !isPanelCollapsed"
         @add-story="addStory"
         @toggle-column="toggleColumn"
         @toggle-tasks-collapsed="toggleTasksCollapsed"

@@ -18,44 +18,7 @@
     <p v-if="boardError" class="error">{{ boardError }}</p>
     <p v-if="infoMessage" class="info">{{ infoMessage }}</p>
 
-    <div class="grid">
-      <div class="panel" :class="{ collapsed: isPanelCollapsed }">
-        <div class="panel-header">
-          <h2>Новая пользовательская история</h2>
-          <button
-            class="collapse-btn"
-            type="button"
-            @click="emit('togglePanel')"
-            :aria-label="isPanelCollapsed ? 'Развернуть' : 'Свернуть'"
-          >
-            {{ isPanelCollapsed ? '▼' : '▲' }}
-          </button>
-        </div>
-        <form v-show="!isPanelCollapsed" class="story-form" @submit.prevent="emit('addStory')">
-          <label>
-            Название
-            <input v-model="storyForm.title" placeholder="Как пользователь, я хочу..." />
-          </label>
-          <div class="inline">
-            <label>
-              Story Points
-              <input v-model.number="storyForm.estimate" min="1" type="number" />
-            </label>
-            <label>
-              Статус
-              <select v-model="storyForm.status">
-                <option v-for="status in statusOptions" :key="status.value" :value="status.value">
-                  {{ status.label }}
-                </option>
-              </select>
-            </label>
-          </div>
-          <button class="primary" type="submit">Добавить</button>
-          <p v-if="storyError" class="error">{{ storyError }}</p>
-        </form>
-      </div>
-
-      <div class="board" :class="{ 'panel-expanded': !isPanelCollapsed }">
+    <div class="board">
         <div
           v-for="column in boardColumns"
           :key="column.value"
@@ -82,6 +45,17 @@
           </p>
 
           <div v-else>
+            <div v-if="column.value === 'backlog'" class="backlog-adder">
+              <form class="story-form inline" @submit.prevent="addBacklogStory">
+                <input
+                  v-model="storyForm.title"
+                  placeholder="Как пользователь, я хочу..."
+                />
+                <input v-model.number="storyForm.estimate" min="1" type="number" />
+                <button class="primary" type="submit">Добавить</button>
+              </form>
+              <p v-if="storyError" class="error">{{ storyError }}</p>
+            </div>
             <p v-if="!column.stories.length" class="empty">Пока нет историй</p>
 
             <article v-for="story in column.stories" :key="story.id" class="story-card">
@@ -348,13 +322,12 @@
             </article>
           </div>
         </div>
-      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-defineProps({
+const props = defineProps({
   statusOptions: {
     type: Array,
     default: () => [],
@@ -386,10 +359,6 @@ defineProps({
   storyError: {
     type: String,
     default: '',
-  },
-  isPanelCollapsed: {
-    type: Boolean,
-    default: false,
   },
   collapsedColumns: {
     type: Object,
@@ -458,7 +427,6 @@ defineProps({
 })
 
 const emit = defineEmits([
-  'togglePanel',
   'addStory',
   'toggleColumn',
   'toggleTasksCollapsed',
@@ -481,4 +449,9 @@ const emit = defineEmits([
   'saveTaskTitle',
   'cancelEditingTaskTitle',
 ])
+
+const addBacklogStory = () => {
+  props.storyForm.status = 'backlog'
+  emit('addStory')
+}
 </script>

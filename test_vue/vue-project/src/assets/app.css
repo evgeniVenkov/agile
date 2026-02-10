@@ -709,6 +709,19 @@ textarea {
   gap: 16px;
 }
 
+.backlog-adder {
+  margin-bottom: 12px;
+}
+
+.backlog-adder .story-form.inline {
+  grid-template-columns: 1fr 120px auto;
+  align-items: end;
+}
+
+.backlog-adder .story-form input {
+  min-width: 0;
+}
+
 .board {
   display: grid;
   gap: 16px;
