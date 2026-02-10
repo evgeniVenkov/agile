@@ -45,6 +45,12 @@ export const addStoryToRelease = (releaseId, storyId, userId) =>
     body: JSON.stringify({ storyId, userId }),
   })
 
+export const deleteRelease = (releaseId, userId) =>
+  request(`/api/releases/${releaseId}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ userId }),
+  })
+
 export const fetchProjectMembers = (projectId, userId) => {
   const query = userId ? `?userId=${userId}` : ''
   return request(`/api/projects/${projectId}/members${query}`)

@@ -15,6 +15,7 @@ import {
   fetchReleases as fetchReleasesApi,
   createRelease as createReleaseApi,
   addStoryToRelease as addStoryToReleaseApi,
+  deleteRelease as deleteReleaseApi,
   fetchProjectMembers,
   addProjectMember,
   removeProjectMember,
@@ -329,6 +330,22 @@ const addStoryToRelease = async (releaseId) => {
     await loadStories()
   } catch (error) {
     releaseError.value = error.message || 'Не удалось добавить историю в релиз.'
+  }
+}
+
+const removeRelease = async (releaseId) => {
+  if (!currentUser.value) return
+  if (!confirm('Удалить релиз? Истории останутся, релиз будет удален.')) return
+
+  try {
+    await deleteReleaseApi(releaseId, currentUser.value.id)
+    if (Number(selectedReleaseId.value) === Number(releaseId)) {
+      selectedReleaseId.value = null
+    }
+    await loadReleases()
+    await loadStories()
+  } catch (error) {
+    releaseError.value = error.message || 'Не удалось удалить релиз.'
   }
 }
 
@@ -1162,6 +1179,7 @@ const toggleColumn = (columnValue) => {
         :release-burndown-error="releaseBurndownError"
         @create-release="createRelease"
         @add-story-to-release="addStoryToRelease"
+        @remove-release="removeRelease"
         @load-archive-analytics="loadArchiveAnalytics"
         @load-release-burndown="loadReleaseBurndown"
         @remove-archived-story="removeArchivedStory"

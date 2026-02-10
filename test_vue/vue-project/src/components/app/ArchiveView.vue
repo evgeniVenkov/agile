@@ -1,17 +1,29 @@
 <template>
   <div class="archive-view">
-    <div v-if="userRole === 'admin' && currentProject" class="panel release-panel">
+    <div v-if="userRole === 'admin'" class="panel release-panel">
       <h2>Релизы</h2>
+      <p v-if="!currentProject" class="muted">Выберите проект, чтобы управлять релизами.</p>
       <div class="release-form">
         <label>
           Название релиза
-          <input v-model="releaseForm.name" placeholder="Например, Sprint 12" />
+          <input
+            v-model="releaseForm.name"
+            placeholder="Например, Sprint 12"
+            :disabled="!currentProject"
+          />
         </label>
         <label>
           Дата релиза
-          <input v-model="releaseForm.date" type="date" />
+          <input v-model="releaseForm.date" type="date" :disabled="!currentProject" />
         </label>
-        <button class="primary small" type="button" @click="emit('createRelease')">Создать релиз</button>
+        <button
+          class="primary small"
+          type="button"
+          :disabled="!currentProject"
+          @click="emit('createRelease')"
+        >
+          Создать релиз
+        </button>
       </div>
       <p v-if="releaseError" class="error">{{ releaseError }}</p>
       <div v-if="!releases.length" class="muted">Релизов пока нет.</div>
@@ -24,6 +36,14 @@
                 Дата: {{ new Date(release.releaseDate).toLocaleDateString('ru-RU') }}
               </p>
             </div>
+            <button
+              class="ghost-btn danger small"
+              type="button"
+              title="Удалить релиз"
+              @click="emit('removeRelease', release.id)"
+            >
+              ✕
+            </button>
           </div>
           <div class="release-stories">
             <p v-if="!storiesInRelease(release.id).length" class="muted">Историй нет.</p>
@@ -291,6 +311,7 @@ const emit = defineEmits([
   'update:selectedReleaseId',
   'createRelease',
   'addStoryToRelease',
+  'removeRelease',
   'loadArchiveAnalytics',
   'loadReleaseBurndown',
   'removeArchivedStory',

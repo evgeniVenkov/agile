@@ -669,6 +669,46 @@ app.post('/api/releases/:id/stories', async (req, res) => {
   }
 })
 
+app.delete('/api/releases/:id', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { userId } = req.body ?? {}
+
+    if (!userId) {
+      return res.status(400).json({ message: 'userId required' })
+    }
+
+    const role = await getUserRole(userId)
+    if (!hasPermission(role, ['admin'])) {
+      return res.status(403).json({ message: 'insufficient permissions' })
+    }
+
+    const [releaseRows] = await pool.query(
+      'SELECT id, project_id FROM releases WHERE id = ?',
+      [id]
+    )
+    if (!releaseRows.length) {
+      return res.status(404).json({ message: 'release not found' })
+    }
+
+    const release = releaseRows[0]
+    const isMember = await isProjectMember(userId, release.project_id)
+    if (!isMember) {
+      return res.status(403).json({ message: 'access denied: not a project member' })
+    }
+
+    const [result] = await pool.query('DELETE FROM releases WHERE id = ?', [id])
+    if (!result.affectedRows) {
+      return res.status(404).json({ message: 'release not found' })
+    }
+
+    return res.status(204).send()
+  } catch (error) {
+    console.error('[releases:delete]', error)
+    return res.status(500).json({ message: 'internal error' })
+  }
+})
+
 app.get('/api/stories', async (req, res) => {
   try {
     const { projectId, userId } = req.query
