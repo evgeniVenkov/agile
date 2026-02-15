@@ -69,6 +69,7 @@ export const ensureSchema = async () => {
           id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
           name VARCHAR(255) NOT NULL,
           description TEXT,
+          iteration_days SMALLINT UNSIGNED NOT NULL DEFAULT 14,
           created_by INT UNSIGNED NOT NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           CONSTRAINT fk_project_creator FOREIGN KEY (created_by) REFERENCES users (id) ON DELETE CASCADE
@@ -76,6 +77,33 @@ export const ensureSchema = async () => {
       `)
       console.log('Migration: added projects table')
     }
+  } catch (error) {
+    console.warn('Migration warning:', error.message)
+  }
+
+  // Migration: add iteration_days to projects if it doesn't exist
+  try {
+    const [columns] = await pool.query(`
+      SELECT COLUMN_NAME
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'projects'
+      AND COLUMN_NAME = 'iteration_days'
+    `)
+
+    if (columns.length === 0) {
+      await pool.query(`
+        ALTER TABLE projects
+        ADD COLUMN iteration_days SMALLINT UNSIGNED NOT NULL DEFAULT 14
+      `)
+      console.log('Migration: added iteration_days column to projects table')
+    }
+
+    await pool.query(`
+      UPDATE projects
+      SET iteration_days = 14
+      WHERE iteration_days IS NULL OR iteration_days < 1
+    `)
   } catch (error) {
     console.warn('Migration warning:', error.message)
   }
@@ -227,4 +255,3 @@ export const ensureSchema = async () => {
     console.warn('Migration warning:', error.message)
   }
 }
-

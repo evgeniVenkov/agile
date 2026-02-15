@@ -660,6 +660,10 @@ textarea {
   font-size: 2rem;
 }
 
+.iteration-number {
+  color: #0f172a;
+}
+
 .grid {
   display: grid;
   gap: 24px;

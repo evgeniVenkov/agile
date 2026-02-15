@@ -189,8 +189,8 @@
       <div class="speed-header">
         <h3>Скорость</h3>
       </div>
-      <p class="speed-value">{{ speedValue }} SP / день</p>
-      <p class="muted">Среднее количество выполненных story points за время жизни доски</p>
+      <p class="speed-value">{{ speedValue }} SP / Итерация</p>
+      <p class="muted">Среднее количество очков за выполненную историю за итерацию в течение срока службы доски</p>
     </div>
 
     <p v-if="isArchiveLoading" class="muted">Строим отчеты...</p>
@@ -389,6 +389,11 @@ const speedValue = computed(() => {
   if (boardStartDate > now) {
     boardStartDate = now
   }
+
+  const rawIterationDays = Number.parseInt(props.currentProjectInfo?.iterationDays, 10)
+  const iterationDays =
+    Number.isFinite(rawIterationDays) && rawIterationDays >= 1 ? rawIterationDays : 14
+
   const startUtc = Date.UTC(
     boardStartDate.getUTCFullYear(),
     boardStartDate.getUTCMonth(),
@@ -397,8 +402,9 @@ const speedValue = computed(() => {
   const endUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
 
   const days = Math.max(1, Math.floor((endUtc - startUtc) / 86400000) + 1)
+  const iterations = Math.max(1, Math.ceil(days / iterationDays))
 
-  const value = totalPoints / days
+  const value = totalPoints / iterations
   if (!Number.isFinite(value)) return '0'
   const formatted = value.toFixed(1)
   return formatted.endsWith('.0') ? formatted.slice(0, -2) : formatted

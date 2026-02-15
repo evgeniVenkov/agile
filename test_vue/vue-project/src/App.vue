@@ -11,7 +11,7 @@ import {
   loginUser,
   fetchProjects,
   createProject,
-  updateProjectName as updateProjectNameApi,
+  updateProject as updateProjectApi,
   fetchReleases as fetchReleasesApi,
   createRelease as createReleaseApi,
   addStoryToRelease as addStoryToReleaseApi,
@@ -38,6 +38,7 @@ import {
 } from './services/api'
 
 const SESSION_KEY = 'agile-session'
+const DAY_MS = 24 * 60 * 60 * 1000
 const canUseStorage = typeof window !== 'undefined' && !!window?.localStorage
 
 const readSession = () => {
@@ -107,6 +108,9 @@ const settingsForm = reactive({
   password: '',
   role: 'frontend-developer',
 })
+const projectSettingsForm = reactive({
+  iterationDays: 14,
+})
 const showLoginPassword = ref(false)
 const showSettingsPassword = ref(false)
 
@@ -119,6 +123,8 @@ const boardError = ref('')
 const archiveError = ref('')
 const settingsError = ref('')
 const settingsSuccess = ref('')
+const projectSettingsError = ref('')
+const projectSettingsSuccess = ref('')
 const isBoardLoading = ref(false)
 const isArchiveLoading = ref(false)
 const isReleaseBurndownLoading = ref(false)
@@ -178,6 +184,36 @@ const collapsedColumns = reactive(
 )
 
 const userRole = computed(() => currentUser.value?.role || 'frontend-developer')
+const currentIterationInfo = computed(() => {
+  const createdAt = currentProjectInfo.value?.createdAt
+  const rawIterationDays = Number.parseInt(currentProjectInfo.value?.iterationDays, 10)
+  const iterationDays =
+    Number.isFinite(rawIterationDays) && rawIterationDays >= 1 ? rawIterationDays : 14
+  if (!createdAt) return null
+
+  const createdDate = new Date(createdAt)
+  if (Number.isNaN(createdDate.getTime())) return null
+
+  const createdUtc = Date.UTC(
+    createdDate.getUTCFullYear(),
+    createdDate.getUTCMonth(),
+    createdDate.getUTCDate()
+  )
+  const now = new Date()
+  const nowUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  const normalizedNowUtc = Math.max(nowUtc, createdUtc)
+  const elapsedDays = Math.floor((normalizedNowUtc - createdUtc) / DAY_MS) + 1
+  const iterationNumber = Math.max(1, Math.ceil(elapsedDays / iterationDays))
+  const iterationStartUtc = createdUtc + (iterationNumber - 1) * iterationDays * DAY_MS
+  const iterationEndUtc = iterationStartUtc + (iterationDays - 1) * DAY_MS
+
+  return {
+    number: iterationNumber,
+    iterationDays,
+    startDate: new Date(iterationStartUtc).toISOString(),
+    endDate: new Date(iterationEndUtc).toISOString(),
+  }
+})
 
 const loadProjects = async () => {
   if (!currentUser.value) return
@@ -372,12 +408,39 @@ const saveProjectName = async () => {
   }
 
   try {
-    await updateProjectNameApi(currentProject.value, name, currentUser.value.id)
+    await updateProjectApi(currentProject.value, { name, userId: currentUser.value.id })
     isEditingProjectName.value = false
     projectNameDraft.value = ''
     await loadProjects()
   } catch (error) {
     projectError.value = error.message || 'Не удалось обновить название проекта.'
+  }
+}
+
+const saveProjectIterationSettings = async () => {
+  projectSettingsError.value = ''
+  projectSettingsSuccess.value = ''
+
+  if (!currentUser.value || !currentProject.value) {
+    projectSettingsError.value = 'Выберите проект и авторизуйтесь.'
+    return
+  }
+
+  const normalizedIterationDays = Number.parseInt(projectSettingsForm.iterationDays, 10)
+  if (!Number.isFinite(normalizedIterationDays) || normalizedIterationDays < 1) {
+    projectSettingsError.value = 'Длительность итерации должна быть целым числом больше 0.'
+    return
+  }
+
+  try {
+    await updateProjectApi(currentProject.value, {
+      userId: currentUser.value.id,
+      iterationDays: normalizedIterationDays,
+    })
+    await loadProjects()
+    projectSettingsSuccess.value = 'Настройки итерации сохранены.'
+  } catch (error) {
+    projectSettingsError.value = error.message || 'Не удалось сохранить настройки итерации.'
   }
 }
 
@@ -589,6 +652,20 @@ watch(userRole, () => {
     loadProjectMembers()
   }
 })
+
+watch(
+  currentProjectInfo,
+  (value) => {
+    const normalizedIterationDays = Number.parseInt(value?.iterationDays, 10)
+    projectSettingsForm.iterationDays =
+      Number.isFinite(normalizedIterationDays) && normalizedIterationDays >= 1
+        ? normalizedIterationDays
+        : 14
+    projectSettingsError.value = ''
+    projectSettingsSuccess.value = ''
+  },
+  { immediate: true }
+)
 
 const boardColumns = computed(() =>
   statusOptions.map((status) => {
@@ -1107,6 +1184,7 @@ const toggleColumn = (columnValue) => {
         :status-options="statusOptions"
         :board-columns="boardColumns"
         :analytics="analytics"
+        :current-iteration-info="currentIterationInfo"
         :is-board-loading="isBoardLoading"
         :board-error="boardError"
         :info-message="infoMessage"
@@ -1186,6 +1264,9 @@ const toggleColumn = (columnValue) => {
         :show-settings-password="showSettingsPassword"
         :settings-error="settingsError"
         :settings-success="settingsSuccess"
+        :project-settings-form="projectSettingsForm"
+        :project-settings-error="projectSettingsError"
+        :project-settings-success="projectSettingsSuccess"
         :user-role="userRole"
         :current-project="currentProject"
         :member-form="memberForm"
@@ -1197,6 +1278,7 @@ const toggleColumn = (columnValue) => {
         :get-role-label="getRoleLabel"
         @toggle-settings-password="showSettingsPassword = !showSettingsPassword"
         @save-settings="saveSettings"
+        @save-project-iteration-settings="saveProjectIterationSettings"
         @add-member="handleAddMember"
         @remove-member="handleRemoveMember"
       />

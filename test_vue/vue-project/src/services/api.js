@@ -30,8 +30,8 @@ export const fetchProjects = (userId) => {
 export const createProject = (payload) =>
   request('/api/projects', { method: 'POST', body: JSON.stringify(payload) })
 
-export const updateProjectName = (id, name, userId) =>
-  request(`/api/projects/${id}`, { method: 'PATCH', body: JSON.stringify({ name, userId }) })
+export const updateProject = (id, payload) =>
+  request(`/api/projects/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
 
 export const fetchReleases = (projectId, userId) =>
   request(`/api/releases?projectId=${projectId}&userId=${userId}`)

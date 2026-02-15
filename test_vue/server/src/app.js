@@ -189,6 +189,7 @@ app.get('/api/projects', async (req, res) => {
         p.id,
         p.name,
         p.description,
+        p.iteration_days,
         p.created_by,
         p.created_at,
         u.username AS creator_name
@@ -204,6 +205,7 @@ app.get('/api/projects', async (req, res) => {
       id: row.id,
       name: row.name,
       description: row.description,
+      iterationDays: row.iteration_days ?? 14,
       createdBy: row.created_by,
       creatorName: row.creator_name,
       createdAt: row.created_at,
@@ -216,7 +218,7 @@ app.get('/api/projects', async (req, res) => {
 
 app.post('/api/projects', async (req, res) => {
   try {
-    const { name, description = '', createdBy } = req.body ?? {}
+    const { name, description = '', createdBy, iterationDays } = req.body ?? {}
     if (!name || !createdBy) {
       return res.status(400).json({ message: 'name and createdBy are required' })
     }
@@ -226,10 +228,16 @@ app.post('/api/projects', async (req, res) => {
       return res.status(400).json({ message: 'name cannot be empty' })
     }
 
+    const normalizedIterationDays = Number.parseInt(iterationDays, 10)
+    const safeIterationDays =
+      Number.isFinite(normalizedIterationDays) && normalizedIterationDays >= 1
+        ? Math.min(normalizedIterationDays, 365)
+        : 14
+
     const [result] = await pool.query(
-      `INSERT INTO projects (name, description, created_by)
-       VALUES (?, ?, ?)`,
-      [normalizedName, String(description || '').trim(), createdBy]
+      `INSERT INTO projects (name, description, iteration_days, created_by)
+       VALUES (?, ?, ?, ?)`,
+      [normalizedName, String(description || '').trim(), safeIterationDays, createdBy]
     )
 
     // Автоматически добавляем создателя как участника проекта
@@ -249,6 +257,7 @@ app.post('/api/projects', async (req, res) => {
         p.id,
         p.name,
         p.description,
+        p.iteration_days,
         p.created_by,
         p.created_at,
         u.username AS creator_name
@@ -267,6 +276,7 @@ app.post('/api/projects', async (req, res) => {
       id: project.id,
       name: project.name,
       description: project.description,
+      iterationDays: project.iteration_days ?? 14,
       createdBy: project.created_by,
       creatorName: project.creator_name,
       createdAt: project.created_at,
@@ -280,7 +290,7 @@ app.post('/api/projects', async (req, res) => {
 app.patch('/api/projects/:id', async (req, res) => {
   try {
     const { id } = req.params
-    const { userId, name } = req.body ?? {}
+    const { userId, name, iterationDays } = req.body ?? {}
 
     if (!userId) {
       return res.status(401).json({ message: 'userId required' })
@@ -291,19 +301,33 @@ app.patch('/api/projects/:id', async (req, res) => {
       return res.status(403).json({ message: 'access denied' })
     }
 
-    if (name === undefined) {
-      return res.status(400).json({ message: 'name required' })
+    const updates = []
+    const values = []
+
+    if (name !== undefined) {
+      const normalizedName = String(name ?? '').trim()
+      if (!normalizedName) {
+        return res.status(400).json({ message: 'name cannot be empty' })
+      }
+      updates.push('name = ?')
+      values.push(normalizedName)
     }
 
-    const normalizedName = String(name ?? '').trim()
-    if (!normalizedName) {
-      return res.status(400).json({ message: 'name cannot be empty' })
+    if (iterationDays !== undefined) {
+      const normalizedIterationDays = Number.parseInt(iterationDays, 10)
+      if (!Number.isFinite(normalizedIterationDays) || normalizedIterationDays < 1) {
+        return res.status(400).json({ message: 'iterationDays must be an integer greater than 0' })
+      }
+      updates.push('iteration_days = ?')
+      values.push(Math.min(normalizedIterationDays, 365))
     }
 
-    const [result] = await pool.query('UPDATE projects SET name = ? WHERE id = ?', [
-      normalizedName,
-      id,
-    ])
+    if (!updates.length) {
+      return res.status(400).json({ message: 'no fields to update' })
+    }
+
+    values.push(id)
+    const [result] = await pool.query(`UPDATE projects SET ${updates.join(', ')} WHERE id = ?`, values)
 
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: 'project not found' })
@@ -314,6 +338,7 @@ app.patch('/api/projects/:id', async (req, res) => {
         p.id,
         p.name,
         p.description,
+        p.iteration_days,
         p.created_by,
         p.created_at,
         u.username AS creator_name
@@ -332,6 +357,7 @@ app.patch('/api/projects/:id', async (req, res) => {
       id: project.id,
       name: project.name,
       description: project.description,
+      iterationDays: project.iteration_days ?? 14,
       createdBy: project.created_by,
       creatorName: project.creator_name,
       createdAt: project.created_at,
