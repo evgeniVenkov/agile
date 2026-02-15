@@ -1,122 +1,44 @@
-<template>
+﻿<template>
   <div class="settings-view">
-    <div class="panel settings-panel">
-      <h2>Настройки профиля</h2>
-      <div class="settings-form">
-        <label>
-          Новый пароль
-          <div class="password-field">
-            <input
-              v-model="settingsForm.password"
-              :type="showSettingsPassword ? 'text' : 'password'"
-              placeholder="минимум 6 символов"
-            />
-            <button
-              type="button"
-              class="eye-btn"
-              :aria-label="showSettingsPassword ? 'Скрыть пароль' : 'Показать пароль'"
-              @click="emit('toggleSettingsPassword')"
-            >
-              {{ showSettingsPassword ? '🙈' : '👁️' }}
-            </button>
-          </div>
-          <span class="optional">Оставьте пустым, если не нужно менять пароль</span>
-        </label>
-        <label>
-          Роль
-          <select v-model="settingsForm.role">
-            <option value="admin">Администратор</option>
-            <option value="team-lead">Тим лид</option>
-            <option value="backend-developer">Бэк разработчик</option>
-            <option value="frontend-developer">Фронт разработчик</option>
-            <option value="designer">Дизайнер</option>
-          </select>
-        </label>
-        <button class="primary" type="button" @click="emit('saveSettings')">Сохранить</button>
-        <p v-if="settingsError" class="error">{{ settingsError }}</p>
-        <p v-if="settingsSuccess" class="info">{{ settingsSuccess }}</p>
-      </div>
-    </div>
-    <div v-if="userRole === 'admin' && currentProject" class="panel settings-panel">
-      <h2>Настройка Итераций</h2>
-      <div class="settings-form">
-        <label>
-          Длинна Итерации (дни)
-          <input
-            v-model.number="projectSettingsForm.iterationDays"
-            type="number"
-            min="1"
-            max="365"
-            step="1"
-          />
-        </label>
-        <button class="primary" type="button" @click="emit('saveProjectIterationSettings')">
-          Сохранить
-        </button>
-        <p v-if="projectSettingsError" class="error">{{ projectSettingsError }}</p>
-        <p v-if="projectSettingsSuccess" class="info">{{ projectSettingsSuccess }}</p>
-      </div>
-    </div>
+    <SettingsProfilePanel
+      :settings-form="settingsForm"
+      :show-settings-password="showSettingsPassword"
+      :settings-error="settingsError"
+      :settings-success="settingsSuccess"
+      @toggle-settings-password="emit('toggleSettingsPassword')"
+      @save-settings="emit('saveSettings')"
+    />
 
+    <SettingsIterationPanel
+      :user-role="userRole"
+      :current-project="currentProject"
+      :project-settings-form="projectSettingsForm"
+      :project-settings-error="projectSettingsError"
+      :project-settings-success="projectSettingsSuccess"
+      @save-project-iteration-settings="emit('saveProjectIterationSettings')"
+    />
 
-    <div v-if="userRole === 'admin' && currentProject" class="panel settings-panel">
-      <h2>Участники проекта</h2>
-      <p v-if="!currentProject" class="muted">Выберите проект для управления участниками</p>
-      <div v-else>
-        <div class="member-form">
-          <label>
-            Добавить участника по логину
-            <div class="member-input-group">
-              <input
-                v-model="memberForm.username"
-                placeholder="Введите логин пользователя"
-                @keyup.enter.prevent="emit('addMember')"
-              />
-              <button class="primary small" type="button" @click="emit('addMember')">
-                Добавить
-              </button>
-            </div>
-          </label>
-          <p v-if="memberError" class="error">{{ memberError }}</p>
-          <p v-if="memberSuccess" class="info">{{ memberSuccess }}</p>
-        </div>
-
-        <div class="members-list">
-          <h3>Список участников</h3>
-          <p v-if="isMembersLoading" class="muted">Загрузка...</p>
-          <p v-else-if="!projectMembers.length" class="muted">Нет участников в проекте</p>
-          <div v-else class="members-grid">
-            <div v-for="member in projectMembers" :key="member.id" class="member-card">
-              <div class="member-info">
-                <div class="member-header">
-                  <span class="member-username">{{ member.username }}</span>
-                  <span class="member-role-badge" :class="`role-${member.role}`">
-                    {{ getRoleLabel(member.role) }}
-                  </span>
-                </div>
-                <p class="member-meta">
-                  Добавлен: {{ new Date(member.addedAt).toLocaleDateString('ru-RU') }}
-                  <span v-if="member.addedByUsername"> · {{ member.addedByUsername }}</span>
-                </p>
-              </div>
-              <button
-                v-if="currentUser && member.userId !== currentUser.id"
-                class="ghost-btn danger small"
-                type="button"
-                @click="emit('removeMember', member.userId)"
-                title="Удалить из проекта"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <SettingsMembersPanel
+      :user-role="userRole"
+      :current-project="currentProject"
+      :member-form="memberForm"
+      :member-error="memberError"
+      :member-success="memberSuccess"
+      :is-members-loading="isMembersLoading"
+      :project-members="projectMembers"
+      :current-user="currentUser"
+      :get-role-label="getRoleLabel"
+      @add-member="emit('addMember')"
+      @remove-member="(userId) => emit('removeMember', userId)"
+    />
   </div>
 </template>
 
 <script setup>
+import SettingsIterationPanel from './settings/SettingsIterationPanel.vue'
+import SettingsMembersPanel from './settings/SettingsMembersPanel.vue'
+import SettingsProfilePanel from './settings/SettingsProfilePanel.vue'
+
 defineProps({
   settingsForm: {
     type: Object,

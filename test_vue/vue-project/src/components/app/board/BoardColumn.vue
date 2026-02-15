@@ -1,20 +1,39 @@
 ﻿<template>
-  <div class="workspace">
-    <BoardStatsPanel :analytics="analytics" :current-iteration-info="currentIterationInfo" />
+  <div class="column" :style="{ borderColor: column.accent }">
+    <div class="column-head">
+      <div>
+        <p class="label">{{ column.label }}</p>
+        <p class="muted">{{ column.subtitle }}</p>
+      </div>
+      <div class="column-actions">
+        <div class="badge" :style="{ color: column.accent }">
+          {{ column.stories.length }} · {{ column.estimate }} SP
+        </div>
+        <button class="collapse-btn" type="button" @click="emit('toggleColumn', column.value)">
+          {{ collapsedColumns[column.value] ? 'Развернуть' : 'Свернуть' }}
+        </button>
+      </div>
+    </div>
 
-    <p v-if="isBoardLoading" class="muted">Загружаем актуальные данные...</p>
-    <p v-if="boardError" class="error">{{ boardError }}</p>
-    <p v-if="infoMessage" class="info">{{ infoMessage }}</p>
+    <p v-if="collapsedColumns[column.value]" class="empty collapsed">Колонка свернута</p>
 
-    <div class="board">
-      <BoardColumn
-        v-for="column in boardColumns"
-        :key="column.value"
-        :column="column"
+    <div v-else>
+      <div v-if="column.value === 'backlog'" class="backlog-adder">
+        <form class="story-form inline" @submit.prevent="addBacklogStory">
+          <input v-model="storyForm.title" placeholder="Как пользователь, я хочу..." />
+          <input v-model.number="storyForm.estimate" min="1" type="number" />
+          <button class="primary" type="submit">Добавить</button>
+        </form>
+        <p v-if="storyError" class="error">{{ storyError }}</p>
+      </div>
+
+      <p v-if="!column.stories.length" class="empty">Пока нет историй</p>
+
+      <BoardStoryCard
+        v-for="story in column.stories"
+        :key="story.id"
+        :story="story"
         :status-options="statusOptions"
-        :collapsed-columns="collapsedColumns"
-        :story-form="storyForm"
-        :story-error="storyError"
         :editing-story-id="editingStoryId"
         :story-drafts="storyDrafts"
         :editing-estimate="editingEstimate"
@@ -30,64 +49,45 @@
         :current-user="currentUser"
         :editing-task-title="editingTaskTitle"
         :task-title-drafts="taskTitleDrafts"
-        @add-story="emit('addStory')"
-        @toggle-column="(columnValue) => emit('toggleColumn', columnValue)"
         @update-story-status="(storyId, status) => emit('updateStoryStatus', storyId, status)"
         @start-editing-story="(story) => emit('startEditingStory', story)"
-        @save-story="(storyId) => emit('saveStory', storyId)"
-        @cancel-editing-story="(storyId) => emit('cancelEditingStory', storyId)"
         @start-editing-estimate="(storyId, estimate) => emit('startEditingEstimate', storyId, estimate)"
         @save-estimate="(storyId) => emit('saveEstimate', storyId)"
         @cancel-editing-estimate="(storyId) => emit('cancelEditingEstimate', storyId)"
         @toggle-tasks-collapsed="(storyId) => emit('toggleTasksCollapsed', storyId)"
-        @add-task="(storyId) => emit('addTask', storyId)"
-        @toggle-task="(storyId, taskId) => emit('toggleTask', storyId, taskId)"
-        @remove-task="(storyId, taskId) => emit('removeTask', storyId, taskId)"
         @archive-story="(storyId) => emit('archiveStory', storyId)"
         @remove-story="(storyId) => emit('removeStory', storyId)"
-        @start-assigning-task="(storyId, taskId, task) => emit('startAssigningTask', storyId, taskId, task)"
-        @save-task-assignment="(storyId, taskId) => emit('saveTaskAssignment', storyId, taskId)"
-        @cancel-assigning-task="(storyId, taskId) => emit('cancelAssigningTask', storyId, taskId)"
+        @save-story="(storyId) => emit('saveStory', storyId)"
+        @cancel-editing-story="(storyId) => emit('cancelEditingStory', storyId)"
+        @toggle-task="(storyId, taskId) => emit('toggleTask', storyId, taskId)"
         @start-editing-task-title="(storyId, taskId, task) => emit('startEditingTaskTitle', storyId, taskId, task)"
         @save-task-title="(storyId, taskId) => emit('saveTaskTitle', storyId, taskId)"
         @cancel-editing-task-title="(storyId, taskId) => emit('cancelEditingTaskTitle', storyId, taskId)"
+        @start-assigning-task="(storyId, taskId, task) => emit('startAssigningTask', storyId, taskId, task)"
+        @save-task-assignment="(storyId, taskId) => emit('saveTaskAssignment', storyId, taskId)"
+        @cancel-assigning-task="(storyId, taskId) => emit('cancelAssigningTask', storyId, taskId)"
+        @remove-task="(storyId, taskId) => emit('removeTask', storyId, taskId)"
+        @add-task="(storyId) => emit('addTask', storyId)"
       />
     </div>
   </div>
 </template>
 
 <script setup>
-import BoardColumn from './board/BoardColumn.vue'
-import BoardStatsPanel from './board/BoardStatsPanel.vue'
+import BoardStoryCard from './BoardStoryCard.vue'
 
-defineProps({
+const props = defineProps({
+  column: {
+    type: Object,
+    required: true,
+  },
   statusOptions: {
     type: Array,
     default: () => [],
   },
-  boardColumns: {
-    type: Array,
-    default: () => [],
-  },
-  analytics: {
+  collapsedColumns: {
     type: Object,
     required: true,
-  },
-  currentIterationInfo: {
-    type: Object,
-    default: null,
-  },
-  isBoardLoading: {
-    type: Boolean,
-    default: false,
-  },
-  boardError: {
-    type: String,
-    default: '',
-  },
-  infoMessage: {
-    type: String,
-    default: '',
   },
   storyForm: {
     type: Object,
@@ -96,10 +96,6 @@ defineProps({
   storyError: {
     type: String,
     default: '',
-  },
-  collapsedColumns: {
-    type: Object,
-    required: true,
   },
   editingStoryId: {
     type: [String, Number],
@@ -166,7 +162,6 @@ defineProps({
 const emit = defineEmits([
   'addStory',
   'toggleColumn',
-  'toggleTasksCollapsed',
   'updateStoryStatus',
   'startEditingStory',
   'saveStory',
@@ -174,6 +169,7 @@ const emit = defineEmits([
   'startEditingEstimate',
   'saveEstimate',
   'cancelEditingEstimate',
+  'toggleTasksCollapsed',
   'addTask',
   'toggleTask',
   'removeTask',
@@ -186,4 +182,9 @@ const emit = defineEmits([
   'saveTaskTitle',
   'cancelEditingTaskTitle',
 ])
+
+const addBacklogStory = () => {
+  props.storyForm.status = 'backlog'
+  emit('addStory')
+}
 </script>
