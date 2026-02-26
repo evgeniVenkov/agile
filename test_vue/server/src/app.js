@@ -22,6 +22,7 @@ const mapStories = (rows) => {
         status: row.story_status,
         owner: row.story_owner,
         ownerId: row.owner_id,
+        projectId: row.story_project_id ?? null,
         releaseId: row.story_release_id ?? null,
         createdAt: row.story_created_at,
         tasks: [],
@@ -754,7 +755,7 @@ app.get('/api/stories', async (req, res) => {
         s.status AS story_status,
         s.created_at AS story_created_at,
         s.owner_id,
-        s.project_id,
+        s.project_id AS story_project_id,
         s.release_id AS story_release_id,
         u.username AS story_owner,
         t.id AS task_id,
@@ -1200,6 +1201,7 @@ app.post('/api/stories/:id/complete', async (req, res) => {
         s.status AS story_status,
         s.created_at AS story_created_at,
         s.owner_id,
+        s.project_id AS story_project_id,
         s.release_id AS story_release_id,
         u.username AS story_owner,
         t.id AS task_id,
@@ -1221,8 +1223,8 @@ app.post('/api/stories/:id/complete', async (req, res) => {
 
     const [result] = await pool.query(
       `INSERT INTO archived_stories
-        (original_story_id, title, description, estimate, status, owner_id, owner_name, release_id, tasks_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (original_story_id, title, description, estimate, status, owner_id, owner_name, project_id, release_id, tasks_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         story.id,
         story.title,
@@ -1231,6 +1233,7 @@ app.post('/api/stories/:id/complete', async (req, res) => {
         'done',
         story.ownerId || null,
         story.owner || null,
+        story.projectId || null,
         story.releaseId || null,
         JSON.stringify(story.tasks ?? []),
       ]
@@ -1247,12 +1250,21 @@ app.post('/api/stories/:id/complete', async (req, res) => {
 
 app.get('/api/analytics/archive', async (req, res) => {
   try {
-    const { userId } = req.query
+    const { userId, projectId } = req.query
     if (userId) {
       const userRole = await getUserRole(userId)
       if (!hasPermission(userRole, ['team-lead', 'admin'])) {
         return res.status(403).json({ message: 'insufficient permissions' })
       }
+    }
+
+    if (!projectId) {
+      return res.status(400).json({ message: 'projectId required' })
+    }
+
+    const isMember = await isProjectMember(userId, projectId)
+    if (!isMember) {
+      return res.status(403).json({ message: 'access denied: not a project member' })
     }
     
     const now = new Date()
@@ -1281,12 +1293,13 @@ app.get('/api/analytics/archive', async (req, res) => {
         status,
         owner_id,
         owner_name,
+        project_id,
         tasks_json,
         completed_at
       FROM archived_stories
-      WHERE completed_at BETWEEN ? AND ?
+      WHERE project_id = ? AND completed_at BETWEEN ? AND ?
       ORDER BY completed_at DESC`,
-      [fromBoundary, toBoundary]
+      [projectId, fromBoundary, toBoundary]
     )
 
     const stories = rows.map((row) => {
@@ -1311,6 +1324,7 @@ app.get('/api/analytics/archive', async (req, res) => {
         status: row.status,
         ownerId: row.owner_id,
         ownerName: row.owner_name,
+        projectId: row.project_id,
         tasks,
         completedAt: row.completed_at,
       }

@@ -123,6 +123,7 @@ export const fetchArchiveAnalytics = (params = {}) => {
   if (params.from) query.set('from', params.from)
   if (params.to) query.set('to', params.to)
   if (params.userId) query.set('userId', params.userId)
+  if (params.projectId) query.set('projectId', params.projectId)
   const suffix = query.toString() ? `?${query.toString()}` : ''
   return request(`/api/analytics/archive${suffix}`)
 }

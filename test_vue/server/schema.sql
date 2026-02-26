@@ -88,8 +88,10 @@ CREATE TABLE IF NOT EXISTS archived_stories (
   status ENUM('backlog', 'ready', 'in-progress', 'done') NOT NULL,
   owner_id INT UNSIGNED,
   owner_name VARCHAR(60),
+  project_id INT UNSIGNED,
   release_id INT UNSIGNED,
   tasks_json JSON NOT NULL,
   completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_archived_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE SET NULL,
   CONSTRAINT fk_archived_release FOREIGN KEY (release_id) REFERENCES releases (id) ON DELETE SET NULL
 );

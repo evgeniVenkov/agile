@@ -519,6 +519,7 @@ export const useAppController = () => {
   const loadArchiveAnalytics = async () => {
     if (!archiveFilters.from || !archiveFilters.to) return
     if (!currentUser.value) return
+    if (!currentProject.value) return
     archiveError.value = ''
     isArchiveLoading.value = true
     try {
@@ -534,6 +535,7 @@ export const useAppController = () => {
         from,
         to,
         userId: currentUser.value.id,
+        projectId: currentProject.value,
       })
       archiveData.summary = data.summary
       archiveData.velocity = data.velocity
@@ -631,14 +633,23 @@ export const useAppController = () => {
     }
   })
   
-  watch(currentProject, () => {
-    if (currentUser.value) {
-      loadStories()
-      // Загружаем участников проекта для всех пользователей (для назначения задач)
-      loadProjectMembers()
-      if (currentPage.value === 'archive' && userRole.value === 'admin') {
-        loadReleases()
-      }
+  watch(currentProject, async () => {
+    if (!currentUser.value) return
+
+    loadStories()
+    // Загружаем участников проекта для всех пользователей (для назначения задач)
+    loadProjectMembers()
+    if (currentPage.value === 'archive' && userRole.value === 'admin') {
+      loadReleases()
+    }
+
+    archiveData.summary = null
+    archiveData.velocity = []
+    archiveData.stories = []
+    archiveData.range = null
+
+    if (currentProject.value && ['team-lead', 'admin'].includes(userRole.value)) {
+      await loadArchiveAnalytics()
     }
   })
   

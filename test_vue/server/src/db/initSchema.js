@@ -268,6 +268,35 @@ export const ensureSchema = async () => {
     console.warn('Migration warning:', error.message)
   }
 
+  // Migration: add project_id to archived_stories if it doesn't exist
+  try {
+    const [columns] = await pool.query(`
+      SELECT COLUMN_NAME
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'archived_stories'
+      AND COLUMN_NAME = 'project_id'
+    `)
+
+    if (columns.length === 0) {
+      await pool.query(`
+        ALTER TABLE archived_stories
+        ADD COLUMN project_id INT UNSIGNED,
+        ADD CONSTRAINT fk_archived_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE SET NULL
+      `)
+      console.log('Migration: added project_id column to archived_stories table')
+    }
+
+    await pool.query(`
+      UPDATE archived_stories a
+      INNER JOIN releases r ON r.id = a.release_id
+      SET a.project_id = r.project_id
+      WHERE a.project_id IS NULL AND a.release_id IS NOT NULL
+    `)
+  } catch (error) {
+    console.warn('Migration warning:', error.message)
+  }
+
   // Migration: add story_estimates table if it doesn't exist
   try {
     const [tables] = await pool.query(`
