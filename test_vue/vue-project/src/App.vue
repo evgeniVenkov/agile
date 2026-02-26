@@ -133,6 +133,7 @@ const {
   saveTaskTitle,
   removeStory,
   archiveStory,
+  archiveDoneStories,
   removeArchivedStory,
   toggleColumn
 } = useAppController()
@@ -230,6 +231,7 @@ const {
         :task-assignment-drafts="taskAssignmentDrafts"
         :available-members-for-assignment="availableMembersForAssignment"
         :current-user="currentUser"
+        :user-role="userRole"
         :editing-task-title="editingTaskTitle"
         :task-title-drafts="taskTitleDrafts"
         @add-story="addStory"
@@ -246,6 +248,7 @@ const {
         @toggle-task="toggleTask"
         @remove-task="removeTask"
         @archive-story="archiveStory"
+        @archive-done-stories="archiveDoneStories"
         @remove-story="removeStory"
         @start-assigning-task="startAssigningTask"
         @save-task-assignment="saveTaskAssignment"
@@ -313,6 +316,5 @@ const {
 </template>
 
 <style src="./assets/app.css"></style>
-
 
 

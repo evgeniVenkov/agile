@@ -1091,6 +1091,39 @@ export const useAppController = () => {
       boardError.value = error.message || 'Не удалось перенести историю в архив.'
     }
   }
+
+  const archiveDoneStories = async () => {
+    if (!currentUser.value || userRole.value !== 'admin') return
+
+    const doneStoryIds = stories.value
+      .filter((story) => story.status === 'done')
+      .map((story) => story.id)
+
+    if (doneStoryIds.length <= 2) return
+    if (!confirm(`Отправить в архив все истории из "Готово" (${doneStoryIds.length} шт.)?`)) return
+
+    boardError.value = ''
+    infoMessage.value = ''
+    try {
+      const results = await Promise.allSettled(
+        doneStoryIds.map((storyId) => completeStoryApi(storyId, currentUser.value.id))
+      )
+      const archivedCount = results.filter((result) => result.status === 'fulfilled').length
+      const failedCount = results.length - archivedCount
+
+      if (archivedCount > 0) {
+        await loadStories()
+        await loadArchiveAnalytics()
+        infoMessage.value = `В архив отправлено историй: ${archivedCount}.`
+      }
+
+      if (failedCount > 0) {
+        boardError.value = `Не удалось архивировать историй: ${failedCount}.`
+      }
+    } catch (error) {
+      boardError.value = error.message || 'Не удалось выполнить массовую архивацию.'
+    }
+  }
   
   const removeArchivedStory = async (archivedId) => {
     try {
@@ -1232,6 +1265,7 @@ export const useAppController = () => {
     saveTaskTitle,
     removeStory,
     archiveStory,
+    archiveDoneStories,
     removeArchivedStory,
     toggleColumn
   }

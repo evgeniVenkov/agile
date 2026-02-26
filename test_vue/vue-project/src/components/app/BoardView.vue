@@ -28,6 +28,7 @@
         :task-assignment-drafts="taskAssignmentDrafts"
         :available-members-for-assignment="availableMembersForAssignment"
         :current-user="currentUser"
+        :user-role="userRole"
         :editing-task-title="editingTaskTitle"
         :task-title-drafts="taskTitleDrafts"
         @add-story="emit('addStory')"
@@ -51,6 +52,7 @@
         @start-editing-task-title="(storyId, taskId, task) => emit('startEditingTaskTitle', storyId, taskId, task)"
         @save-task-title="(storyId, taskId) => emit('saveTaskTitle', storyId, taskId)"
         @cancel-editing-task-title="(storyId, taskId) => emit('cancelEditingTaskTitle', storyId, taskId)"
+        @archive-done-stories="emit('archiveDoneStories')"
       />
     </div>
   </div>
@@ -153,6 +155,10 @@ defineProps({
     type: Object,
     default: null,
   },
+  userRole: {
+    type: String,
+    default: '',
+  },
   editingTaskTitle: {
     type: [String, Number],
     default: null,
@@ -185,5 +191,6 @@ const emit = defineEmits([
   'startEditingTaskTitle',
   'saveTaskTitle',
   'cancelEditingTaskTitle',
+  'archiveDoneStories',
 ])
 </script>

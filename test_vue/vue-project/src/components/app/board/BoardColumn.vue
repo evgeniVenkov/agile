@@ -9,6 +9,14 @@
         <div class="badge" :style="{ color: column.accent }">
           {{ column.stories.length }} · {{ column.estimate }} SP
         </div>
+        <button
+          v-if="canBulkArchive"
+          class="ghost-btn small"
+          type="button"
+          @click="emit('archiveDoneStories')"
+        >
+          В архив все ({{ column.stories.length }})
+        </button>
         <button class="collapse-btn" type="button" @click="emit('toggleColumn', column.value)">
           {{ collapsedColumns[column.value] ? 'Развернуть' : 'Свернуть' }}
         </button>
@@ -74,6 +82,7 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import BoardStoryCard from './BoardStoryCard.vue'
 
 const props = defineProps({
@@ -149,6 +158,10 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  userRole: {
+    type: String,
+    default: '',
+  },
   editingTaskTitle: {
     type: [String, Number],
     default: null,
@@ -162,6 +175,7 @@ const props = defineProps({
 const emit = defineEmits([
   'addStory',
   'toggleColumn',
+  'archiveDoneStories',
   'updateStoryStatus',
   'startEditingStory',
   'saveStory',
@@ -182,6 +196,10 @@ const emit = defineEmits([
   'saveTaskTitle',
   'cancelEditingTaskTitle',
 ])
+
+const canBulkArchive = computed(
+  () => props.column.value === 'done' && props.userRole === 'admin' && props.column.stories.length > 2
+)
 
 const addBacklogStory = () => {
   props.storyForm.status = 'backlog'
