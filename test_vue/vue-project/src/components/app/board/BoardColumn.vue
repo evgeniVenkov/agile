@@ -29,7 +29,6 @@
       <div v-if="column.value === 'backlog'" class="backlog-adder">
         <form class="story-form inline" @submit.prevent="addBacklogStory">
           <input v-model="storyForm.title" placeholder="Как пользователь, я хочу..." />
-          <input v-model.number="storyForm.estimate" min="1" type="number" />
           <button class="primary" type="submit">Добавить</button>
         </form>
         <p v-if="storyError" class="error">{{ storyError }}</p>
@@ -55,6 +54,7 @@
         :task-assignment-drafts="taskAssignmentDrafts"
         :available-members-for-assignment="availableMembersForAssignment"
         :current-user="currentUser"
+        :user-role="userRole"
         :editing-task-title="editingTaskTitle"
         :task-title-drafts="taskTitleDrafts"
         @update-story-status="(storyId, status) => emit('updateStoryStatus', storyId, status)"
@@ -203,6 +203,7 @@ const canBulkArchive = computed(
 
 const addBacklogStory = () => {
   props.storyForm.status = 'backlog'
+  props.storyForm.estimate = 1
   emit('addStory')
 }
 </script>

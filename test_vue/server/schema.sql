@@ -67,6 +67,18 @@ CREATE TABLE IF NOT EXISTS story_tasks (
   CONSTRAINT fk_task_assignee FOREIGN KEY (assigned_to) REFERENCES users (id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS story_estimates (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  story_id INT UNSIGNED NOT NULL,
+  user_id INT UNSIGNED NOT NULL,
+  estimate INT UNSIGNED NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_story_estimate_story FOREIGN KEY (story_id) REFERENCES stories (id) ON DELETE CASCADE,
+  CONSTRAINT fk_story_estimate_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+  UNIQUE KEY unique_story_user_estimate (story_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS archived_stories (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   original_story_id INT UNSIGNED NOT NULL,

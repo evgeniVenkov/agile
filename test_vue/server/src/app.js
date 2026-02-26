@@ -67,6 +67,8 @@ const hasPermission = (userRole, requiredRoles) => {
   return requiredRoles.includes(userRole)
 }
 
+const isPrivilegedEstimatorRole = (userRole) => ['admin', 'team-lead'].includes(userRole)
+
 const isProjectMember = async (userId, projectId) => {
   if (!userId || !projectId) return false
   try {
@@ -787,8 +789,67 @@ app.get('/api/stories', async (req, res) => {
     query += ' ORDER BY s.created_at DESC, t.created_at ASC'
 
     const [rows] = await pool.query(query, params)
+    const storiesData = mapStories(rows)
+    const storyIds = storiesData.map((story) => Number(story.id))
+    const viewerRole = await getUserRole(userId)
+    const isPrivilegedViewer = isPrivilegedEstimatorRole(viewerRole)
+    const viewerId = Number(userId)
 
-    return res.json({ stories: mapStories(rows) })
+    if (!storyIds.length) {
+      return res.json({ stories: storiesData })
+    }
+
+    const placeholders = storyIds.map(() => '?').join(', ')
+    const [estimateRows] = await pool.query(
+      `SELECT se.story_id, se.user_id, se.estimate, u.username
+       FROM story_estimates se
+       LEFT JOIN users u ON u.id = se.user_id
+       WHERE se.story_id IN (${placeholders})`,
+      storyIds
+    )
+
+    const estimatesByStory = new Map()
+    estimateRows.forEach((row) => {
+      const key = Number(row.story_id)
+      const current = estimatesByStory.get(key) ?? []
+      current.push({
+        userId: Number(row.user_id),
+        username: row.username || 'unknown',
+        estimate: Number(row.estimate),
+      })
+      estimatesByStory.set(key, current)
+    })
+
+    const enrichedStories = storiesData.map((story) => {
+      const storyEstimates = estimatesByStory.get(Number(story.id)) ?? []
+      const ownEstimate = storyEstimates.find((item) => item.userId === viewerId)?.estimate ?? null
+      const pokerAverage = storyEstimates.length
+        ? Math.round(
+            storyEstimates.reduce((sum, item) => sum + Number(item.estimate ?? 0), 0) /
+              storyEstimates.length
+          )
+        : null
+
+      if (story.status === 'ready' && !isPrivilegedViewer) {
+        return {
+          ...story,
+          estimate: ownEstimate,
+          ownEstimate,
+          estimatesCount: storyEstimates.length,
+          estimates: [],
+        }
+      }
+
+      return {
+        ...story,
+        estimate: story.status === 'ready' ? pokerAverage ?? Number(story.estimate ?? 0) : Number(story.estimate ?? 0),
+        ownEstimate,
+        estimatesCount: storyEstimates.length,
+        estimates: isPrivilegedViewer ? storyEstimates : [],
+      }
+    })
+
+    return res.json({ stories: enrichedStories })
   } catch (error) {
     console.error('[stories:list]', error)
     return res.status(500).json({ message: 'internal error' })
@@ -835,18 +896,36 @@ app.patch('/api/stories/:id', async (req, res) => {
   try {
     const { id } = req.params
     const { status, estimate, userId, title, description } = req.body ?? {}
-    
-    if (userId) {
-      const canUpdate = await canModifyStory(userId, id, 'update')
-      if (!canUpdate) {
-        return res.status(403).json({ message: 'insufficient permissions' })
+
+    let story = null
+    if (status !== undefined || estimate !== undefined || title !== undefined || description !== undefined) {
+      const [storyRows] = await pool.query(
+        'SELECT id, status, owner_id, project_id FROM stories WHERE id = ?',
+        [id]
+      )
+      if (!storyRows.length) {
+        return res.status(404).json({ message: 'story not found' })
       }
+      story = storyRows[0]
     }
-    
+
+    let checkedUpdatePermission = false
+    const ensureUpdatePermission = async () => {
+      if (checkedUpdatePermission) return true
+      if (!userId) return false
+      const canUpdate = await canModifyStory(userId, id, 'update')
+      if (!canUpdate) return false
+      checkedUpdatePermission = true
+      return true
+    }
+
     const updates = []
     const values = []
     
     if (status !== undefined) {
+      if (!(await ensureUpdatePermission())) {
+        return res.status(403).json({ message: 'insufficient permissions' })
+      }
       if (!['backlog', 'ready', 'in-progress', 'done'].includes(status)) {
         return res.status(400).json({ message: 'invalid status' })
       }
@@ -856,11 +935,50 @@ app.patch('/api/stories/:id', async (req, res) => {
     
     if (estimate !== undefined) {
       const normalizedEstimate = Number.isFinite(Number(estimate)) ? Math.max(1, Number(estimate)) : 1
-      updates.push('estimate = ?')
-      values.push(normalizedEstimate)
+      const effectiveStatus = status !== undefined ? status : story?.status
+
+      if (effectiveStatus === 'backlog') {
+        return res.status(400).json({ message: 'estimate is not allowed for backlog stories' })
+      }
+
+      if (effectiveStatus === 'ready') {
+        if (!userId) {
+          return res.status(401).json({ message: 'userId required' })
+        }
+        if (story?.project_id) {
+          const member = await isProjectMember(userId, story.project_id)
+          if (!member) {
+            return res.status(403).json({ message: 'access denied: not a project member' })
+          }
+        }
+
+        await pool.query(
+          `INSERT INTO story_estimates (story_id, user_id, estimate)
+           VALUES (?, ?, ?)
+           ON DUPLICATE KEY UPDATE estimate = VALUES(estimate), updated_at = CURRENT_TIMESTAMP`,
+          [id, userId, normalizedEstimate]
+        )
+
+        const [aggregateRows] = await pool.query(
+          'SELECT ROUND(AVG(estimate)) AS avg_estimate FROM story_estimates WHERE story_id = ?',
+          [id]
+        )
+        const aggregatedEstimate = Number(aggregateRows[0]?.avg_estimate ?? normalizedEstimate)
+        updates.push('estimate = ?')
+        values.push(aggregatedEstimate)
+      } else {
+        if (!(await ensureUpdatePermission())) {
+          return res.status(403).json({ message: 'insufficient permissions' })
+        }
+        updates.push('estimate = ?')
+        values.push(normalizedEstimate)
+      }
     }
 
     if (title !== undefined) {
+      if (!(await ensureUpdatePermission())) {
+        return res.status(403).json({ message: 'insufficient permissions' })
+      }
       const normalizedTitle = String(title ?? '').trim()
       if (!normalizedTitle) {
         return res.status(400).json({ message: 'title required' })
@@ -870,6 +988,9 @@ app.patch('/api/stories/:id', async (req, res) => {
     }
 
     if (description !== undefined) {
+      if (!(await ensureUpdatePermission())) {
+        return res.status(403).json({ message: 'insufficient permissions' })
+      }
       const normalizedDescription = String(description ?? '').trim()
       updates.push('description = ?')
       values.push(normalizedDescription)
@@ -890,14 +1011,14 @@ app.patch('/api/stories/:id', async (req, res) => {
       return res.status(404).json({ message: 'story not found' })
     }
 
-    const story = rows[0]
+    const updatedStory = rows[0]
     return res.json({
-      id: story.id,
-      title: story.title,
-      description: story.description,
-      estimate: Number(story.estimate ?? 0),
-      status: story.status,
-      ownerId: story.owner_id,
+      id: updatedStory.id,
+      title: updatedStory.title,
+      description: updatedStory.description,
+      estimate: Number(updatedStory.estimate ?? 0),
+      status: updatedStory.status,
+      ownerId: updatedStory.owner_id,
     })
   } catch (error) {
     console.error('[stories:update]', error)

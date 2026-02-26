@@ -30,11 +30,12 @@
     <div class="story-meta">
       <span
         v-if="editingEstimate !== story.id"
-        class="tag editable"
-        @click="emit('startEditingEstimate', story.id, story.estimate)"
-        title="Нажмите, чтобы изменить оценку"
+        class="tag"
+        :class="{ editable: canEditEstimate }"
+        :title="canEditEstimate ? 'Нажмите, чтобы изменить оценку' : 'Оценка в бэклоге недоступна'"
+        @click="canEditEstimate && emit('startEditingEstimate', story.id, story.estimate)"
       >
-        {{ story.estimate }} SP
+        {{ estimateLabel }}
       </span>
       <div v-else class="estimate-editor">
         <input
@@ -62,6 +63,12 @@
       >
         {{ isTasksCollapsed(story.id) ? 'Развернуть задачи' : 'Свернуть задачи' }}
       </button>
+    </div>
+
+    <div v-if="showPlanningPokerDetails" class="poker-estimates">
+      <span v-for="vote in story.estimates" :key="`${story.id}-${vote.userId}`" class="tag secondary">
+        {{ vote.username }}: {{ vote.estimate }} SP
+      </span>
     </div>
 
     <div v-if="canArchiveStory || canDeleteStory" class="story-actions">
@@ -115,9 +122,10 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import BoardStoryTasks from './BoardStoryTasks.vue'
 
-defineProps({
+const props = defineProps({
   story: {
     type: Object,
     required: true,
@@ -178,6 +186,10 @@ defineProps({
     type: Object,
     default: null,
   },
+  userRole: {
+    type: String,
+    default: '',
+  },
   editingTaskTitle: {
     type: [String, Number],
     default: null,
@@ -209,4 +221,32 @@ const emit = defineEmits([
   'removeTask',
   'addTask',
 ])
+
+const isPlanningPokerStory = computed(() => props.story.status === 'ready')
+const isPrivilegedViewer = computed(() => ['admin', 'team-lead'].includes(props.userRole))
+const canEditEstimate = computed(() => props.story.status !== 'backlog')
+
+const estimateLabel = computed(() => {
+  if (!isPlanningPokerStory.value) {
+    return `${props.story.estimate ?? 0} SP`
+  }
+
+  if (isPrivilegedViewer.value) {
+    return `Покер: ${props.story.estimate ?? 0} SP`
+  }
+
+  if (props.story.estimate === null || props.story.estimate === undefined) {
+    return 'Моя оценка: —'
+  }
+
+  return `Моя оценка: ${props.story.estimate} SP`
+})
+
+const showPlanningPokerDetails = computed(
+  () =>
+    isPlanningPokerStory.value &&
+    isPrivilegedViewer.value &&
+    Array.isArray(props.story.estimates) &&
+    props.story.estimates.length > 0
+)
 </script>

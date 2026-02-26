@@ -913,6 +913,12 @@ textarea {
   flex-wrap: wrap;
 }
 
+.poker-estimates {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .ghost-btn {
   border: 1px solid #e2e8f0;
   background: #fff;
