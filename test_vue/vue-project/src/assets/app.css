@@ -294,6 +294,44 @@ textarea {
   gap: 24px;
 }
 
+.trash-bin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.trash-bin-header h2 {
+  margin: 0;
+}
+
+.trash-bin-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.trash-bin-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.trash-bin-title {
+  margin: 0 0 6px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
 .archive-view {
   display: flex;
   flex-direction: column;
@@ -360,6 +398,13 @@ textarea {
   gap: 6px;
 }
 
+.release-story-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .release-add {
   display: flex;
   gap: 8px;
@@ -368,6 +413,49 @@ textarea {
 
 .release-add select {
   min-width: 220px;
+}
+
+.release-bulk-add {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.release-bulk-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.release-story-picker {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.release-story-picker li + li {
+  border-top: 1px solid #f1f5f9;
+}
+
+.release-story-checkbox {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.release-story-checkbox input {
+  width: auto;
+  margin-top: 2px;
 }
 
 .settings-view {

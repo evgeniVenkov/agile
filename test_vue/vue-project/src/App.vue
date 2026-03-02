@@ -4,6 +4,7 @@ import AuthSection from './components/app/AuthSection.vue'
 import ProjectSection from './components/app/ProjectSection.vue'
 import BoardView from './components/app/BoardView.vue'
 import ArchiveView from './components/app/ArchiveView.vue'
+import TrashView from './components/app/TrashView.vue'
 import SettingsView from './components/app/SettingsView.vue'
 import { useAppController } from './composables/useAppController'
 const {
@@ -81,6 +82,8 @@ const {
   loadReleases,
   createRelease,
   addStoryToRelease,
+  addStoriesToRelease,
+  removeStoryFromRelease,
   removeRelease,
   startEditingProjectName,
   cancelEditingProjectName,
@@ -200,6 +203,14 @@ const {
         </button>
         <button
           class="tab"
+          :class="{ active: currentPage === 'trash' }"
+          type="button"
+          @click="currentPage = 'trash'"
+        >
+          Корзина
+        </button>
+        <button
+          class="tab"
           :class="{ active: currentPage === 'settings' }"
           type="button"
           @click="currentPage = 'settings'"
@@ -236,7 +247,6 @@ const {
         :user-role="userRole"
         :editing-task-title="editingTaskTitle"
         :task-title-drafts="taskTitleDrafts"
-        :deleted-stories="deletedStoriesForCurrentProject"
         @add-story="addStory"
         @toggle-column="toggleColumn"
         @toggle-tasks-collapsed="toggleTasksCollapsed"
@@ -253,7 +263,6 @@ const {
         @archive-story="archiveStory"
         @archive-done-stories="archiveDoneStories"
         @remove-story="removeStory"
-        @restore-deleted-story="restoreDeletedStory"
         @start-assigning-task="startAssigningTask"
         @save-task-assignment="saveTaskAssignment"
         @cancel-assigning-task="cancelAssigningTask"
@@ -285,14 +294,24 @@ const {
         :release-burndown-error="releaseBurndownError"
         @create-release="createRelease"
         @add-story-to-release="addStoryToRelease"
+        @add-stories-to-release="addStoriesToRelease"
+        @remove-story-from-release="removeStoryFromRelease"
         @remove-release="removeRelease"
         @load-archive-analytics="loadArchiveAnalytics"
         @load-release-burndown="loadReleaseBurndown"
         @remove-archived-story="removeArchivedStory"
       />
 
+      <TrashView
+        v-else-if="currentPage === 'trash'"
+        :deleted-stories="deletedStoriesForCurrentProject"
+        :board-error="boardError"
+        :info-message="infoMessage"
+        @restore-deleted-story="restoreDeletedStory"
+      />
+
       <SettingsView
-        v-else
+        v-else-if="currentPage === 'settings'"
         :settings-form="settingsForm"
         :show-settings-password="showSettingsPassword"
         :settings-error="settingsError"
@@ -320,4 +339,3 @@ const {
 </template>
 
 <style src="./assets/app.css"></style>
-

@@ -8,6 +8,7 @@ import {
   fetchReleases as fetchReleasesApi,
   createRelease as createReleaseApi,
   addStoryToRelease as addStoryToReleaseApi,
+  removeStoryFromRelease as removeStoryFromReleaseApi,
   deleteRelease as deleteReleaseApi,
   fetchProjectMembers,
   addProjectMember,
@@ -390,6 +391,36 @@ export const useAppController = () => {
       releaseError.value = error.message || 'Не удалось добавить историю в релиз.'
     }
   }
+
+  const addStoriesToRelease = async (releaseId, storyIds = []) => {
+    if (!currentUser.value) return
+
+    const normalizedStoryIds = [...new Set(storyIds.map((id) => Number(id)).filter((id) => Number.isFinite(id)))]
+    if (!normalizedStoryIds.length) return
+
+    releaseError.value = ''
+    try {
+      const results = await Promise.allSettled(
+        normalizedStoryIds.map((storyId) => addStoryToReleaseApi(releaseId, storyId, currentUser.value.id))
+      )
+
+      const failedCount = results.filter((result) => result.status === 'rejected').length
+      const successCount = results.length - failedCount
+
+      if (!successCount) {
+        releaseError.value = 'Не удалось добавить отмеченные истории в релиз.'
+        return
+      }
+
+      if (failedCount) {
+        releaseError.value = `Добавлено историй: ${successCount}. Не удалось добавить: ${failedCount}.`
+      }
+
+      await loadStories()
+    } catch (error) {
+      releaseError.value = error.message || 'Не удалось добавить отмеченные истории в релиз.'
+    }
+  }
   
   const removeRelease = async (releaseId) => {
     if (!currentUser.value) return
@@ -404,6 +435,17 @@ export const useAppController = () => {
       await loadStories()
     } catch (error) {
       releaseError.value = error.message || 'Не удалось удалить релиз.'
+    }
+  }
+
+  const removeStoryFromRelease = async (releaseId, storyId) => {
+    if (!currentUser.value) return
+
+    try {
+      await removeStoryFromReleaseApi(releaseId, storyId, currentUser.value.id)
+      await loadStories()
+    } catch (error) {
+      releaseError.value = error.message || 'Не удалось удалить историю из релиза.'
     }
   }
   
@@ -1319,6 +1361,8 @@ export const useAppController = () => {
     loadReleases,
     createRelease,
     addStoryToRelease,
+    addStoriesToRelease,
+    removeStoryFromRelease,
     removeRelease,
     startEditingProjectName,
     cancelEditingProjectName,

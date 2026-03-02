@@ -45,6 +45,12 @@ export const addStoryToRelease = (releaseId, storyId, userId) =>
     body: JSON.stringify({ storyId, userId }),
   })
 
+export const removeStoryFromRelease = (releaseId, storyId, userId) =>
+  request(`/api/releases/${releaseId}/stories/${storyId}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ userId }),
+  })
+
 export const deleteRelease = (releaseId, userId) =>
   request(`/api/releases/${releaseId}`, {
     method: 'DELETE',

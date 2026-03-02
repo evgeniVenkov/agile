@@ -11,6 +11,8 @@
       :stories-in-release="storiesInRelease"
       @create-release="emit('createRelease')"
       @add-story-to-release="(releaseId) => emit('addStoryToRelease', releaseId)"
+      @add-stories-to-release="(releaseId, storyIds) => emit('addStoriesToRelease', releaseId, storyIds)"
+      @remove-story-from-release="(releaseId, storyId) => emit('removeStoryFromRelease', releaseId, storyId)"
       @remove-release="(releaseId) => emit('removeRelease', releaseId)"
     />
 
@@ -144,6 +146,8 @@ const emit = defineEmits([
   'update:selectedReleaseId',
   'createRelease',
   'addStoryToRelease',
+  'addStoriesToRelease',
+  'removeStoryFromRelease',
   'removeRelease',
   'loadArchiveAnalytics',
   'loadReleaseBurndown',

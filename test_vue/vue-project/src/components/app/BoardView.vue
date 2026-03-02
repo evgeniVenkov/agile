@@ -6,28 +6,6 @@
     <p v-if="boardError" class="error">{{ boardError }}</p>
     <p v-if="infoMessage" class="info">{{ infoMessage }}</p>
 
-    <section v-if="deletedStories.length" class="trash-bin">
-      <div class="trash-bin-header">
-        <h3>Корзина удалённых историй</h3>
-        <span class="muted">Последние {{ deletedStories.length }} из 5</span>
-      </div>
-      <ul class="trash-bin-list">
-        <li v-for="story in deletedStories" :key="story.binId" class="trash-bin-item">
-          <div>
-            <p class="trash-bin-title">{{ story.title }}</p>
-            <p class="muted">Удалено: {{ new Date(story.deletedAt).toLocaleString('ru-RU') }}</p>
-          </div>
-          <button
-            class="ghost-btn"
-            type="button"
-            @click="emit('restoreDeletedStory', story.binId)"
-          >
-            Восстановить
-          </button>
-        </li>
-      </ul>
-    </section>
-
     <div class="board">
       <BoardColumn
         v-for="column in boardColumns"
@@ -189,10 +167,6 @@ defineProps({
     type: Object,
     required: true,
   },
-  deletedStories: {
-    type: Array,
-    default: () => [],
-  },
 })
 
 const emit = defineEmits([
@@ -211,7 +185,6 @@ const emit = defineEmits([
   'removeTask',
   'archiveStory',
   'removeStory',
-  'restoreDeletedStory',
   'startAssigningTask',
   'saveTaskAssignment',
   'cancelAssigningTask',
