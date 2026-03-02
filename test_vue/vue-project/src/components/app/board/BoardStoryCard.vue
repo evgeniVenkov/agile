@@ -1,7 +1,7 @@
 ﻿<template>
   <article class="story-card">
     <div class="story-header">
-      <div>
+      <div class="story-main">
         <template v-if="editingStoryId === story.id">
           <input
             v-model="storyDrafts[story.id].title"
@@ -10,13 +10,22 @@
           />
         </template>
         <template v-else>
-          <p
-            class="story-title"
-            :class="{ 'story-editable': canEditStory(story) }"
-            @click="canEditStory(story) && emit('startEditingStory', story)"
-          >
-            {{ story.title }}
-          </p>
+          <div class="story-title-row">
+            <p
+              class="story-title"
+              :class="{ 'story-editable': canEditStory(story) }"
+              @click="canEditStory(story) && emit('startEditingStory', story)"
+            >
+              {{ story.title }}
+            </p>
+            <button
+              class="ghost-btn small story-copy-btn"
+              type="button"
+              @click.stop="copyStoryTitle"
+            >
+              {{ copyButtonLabel }}
+            </button>
+          </div>
           <p class="story-owner">Автор: {{ story.owner }}</p>
         </template>
       </div>
@@ -122,7 +131,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import BoardStoryTasks from './BoardStoryTasks.vue'
 
 const props = defineProps({
@@ -249,4 +258,53 @@ const showPlanningPokerDetails = computed(
     Array.isArray(props.story.estimates) &&
     props.story.estimates.length > 0
 )
+
+const copyState = ref('idle')
+let copyStateTimer = null
+
+const resetCopyStateLater = () => {
+  if (copyStateTimer) {
+    clearTimeout(copyStateTimer)
+  }
+  copyStateTimer = setTimeout(() => {
+    copyState.value = 'idle'
+  }, 1500)
+}
+
+const copyByTextareaFallback = (text) => {
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  const copied = document.execCommand('copy')
+  document.body.removeChild(textarea)
+  return copied
+}
+
+const copyStoryTitle = async () => {
+  const title = String(props.story.title ?? '').trim()
+  if (!title) return
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(title)
+    } else if (!copyByTextareaFallback(title)) {
+      throw new Error('copy failed')
+    }
+    copyState.value = 'success'
+  } catch {
+    copyState.value = 'error'
+  } finally {
+    resetCopyStateLater()
+  }
+}
+
+const copyButtonLabel = computed(() => {
+  if (copyState.value === 'success') return 'Скопировано'
+  if (copyState.value === 'error') return 'Ошибка'
+  return 'Копировать'
+})
 </script>

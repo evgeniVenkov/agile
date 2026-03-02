@@ -897,6 +897,11 @@ textarea {
   gap: 12px;
 }
 
+.story-main {
+  flex: 1;
+  min-width: 0;
+}
+
 .story-header select {
   width: 140px;
   min-width: 140px;
@@ -911,6 +916,16 @@ textarea {
 .story-title {
   font-weight: 600;
   margin: 0;
+}
+
+.story-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.story-copy-btn {
+  flex-shrink: 0;
 }
 
 .story-editable {
