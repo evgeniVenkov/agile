@@ -104,6 +104,7 @@ const {
   canArchiveStory,
   canViewAnalytics,
   canEditStory,
+  deletedStoriesForCurrentProject,
   resetErrors,
   switchMode,
   handleRegister,
@@ -132,6 +133,7 @@ const {
   cancelEditingTaskTitle,
   saveTaskTitle,
   removeStory,
+  restoreDeletedStory,
   archiveStory,
   archiveDoneStories,
   removeArchivedStory,
@@ -234,6 +236,7 @@ const {
         :user-role="userRole"
         :editing-task-title="editingTaskTitle"
         :task-title-drafts="taskTitleDrafts"
+        :deleted-stories="deletedStoriesForCurrentProject"
         @add-story="addStory"
         @toggle-column="toggleColumn"
         @toggle-tasks-collapsed="toggleTasksCollapsed"
@@ -250,6 +253,7 @@ const {
         @archive-story="archiveStory"
         @archive-done-stories="archiveDoneStories"
         @remove-story="removeStory"
+        @restore-deleted-story="restoreDeletedStory"
         @start-assigning-task="startAssigningTask"
         @save-task-assignment="saveTaskAssignment"
         @cancel-assigning-task="cancelAssigningTask"
@@ -316,5 +320,4 @@ const {
 </template>
 
 <style src="./assets/app.css"></style>
-
 

@@ -33,6 +33,8 @@ import {
 export const useAppController = () => {
   
   const SESSION_KEY = 'agile-session'
+  const DELETED_STORIES_BIN_KEY = 'agile-deleted-stories-bin'
+  const MAX_DELETED_STORIES = 5
   const DAY_MS = 24 * 60 * 60 * 1000
   const canUseStorage = typeof window !== 'undefined' && !!window?.localStorage
   
@@ -53,6 +55,28 @@ export const useAppController = () => {
     } else {
       window.localStorage.removeItem(SESSION_KEY)
     }
+  }
+
+  const getDeletedStoriesStorageKey = (userId) =>
+    `${DELETED_STORIES_BIN_KEY}:${userId ?? 'anonymous'}`
+
+  const readDeletedStoriesBin = (userId) => {
+    if (!canUseStorage || !userId) return []
+    try {
+      const raw = window.localStorage.getItem(getDeletedStoriesStorageKey(userId))
+      const parsed = raw ? JSON.parse(raw) : []
+      return Array.isArray(parsed) ? parsed.slice(0, MAX_DELETED_STORIES) : []
+    } catch {
+      return []
+    }
+  }
+
+  const persistDeletedStoriesBin = (userId, deletedStories) => {
+    if (!canUseStorage || !userId) return
+    window.localStorage.setItem(
+      getDeletedStoriesStorageKey(userId),
+      JSON.stringify((deletedStories ?? []).slice(0, MAX_DELETED_STORIES))
+    )
   }
   
   const statusOptions = [
@@ -120,6 +144,7 @@ export const useAppController = () => {
   const settingsSuccess = ref('')
   const projectSettingsError = ref('')
   const projectSettingsSuccess = ref('')
+  const deletedStoriesBin = ref(readDeletedStoriesBin(currentUser.value?.id))
   const isBoardLoading = ref(false)
   const isArchiveLoading = ref(false)
   const isReleaseBurndownLoading = ref(false)
@@ -602,6 +627,7 @@ export const useAppController = () => {
     settingsForm.role = value?.role || 'frontend-developer'
     settingsForm.password = ''
     if (value) {
+      deletedStoriesBin.value = readDeletedStoriesBin(value.id)
       loadProjects().then(() => {
         loadStories()
         if (value.role === 'admin' && currentProject.value) {
@@ -613,7 +639,12 @@ export const useAppController = () => {
       currentProject.value = null
       stories.value = []
       projectMembers.value = []
+      deletedStoriesBin.value = []
     }
+  })
+
+  watch(deletedStoriesBin, (value) => {
+    persistDeletedStoriesBin(currentUser.value?.id, value)
   })
   
   watch(
@@ -770,6 +801,34 @@ export const useAppController = () => {
     if (!currentUser.value) return false
     if (['team-lead', 'admin'].includes(userRole.value)) return true
     return story.ownerId === currentUser.value.id
+  }
+
+  const deletedStoriesForCurrentProject = computed(() =>
+    deletedStoriesBin.value.filter(
+      (entry) => Number(entry.projectId) === Number(currentProject.value)
+    )
+  )
+
+  const rememberDeletedStory = (story) => {
+    if (!story) return
+    const tasks = Array.isArray(story.tasks)
+      ? story.tasks.map((task) => ({
+          title: task.title,
+        }))
+      : []
+    deletedStoriesBin.value = [
+      {
+        binId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        projectId: story.projectId ?? currentProject.value,
+        title: story.title,
+        estimate: Number.isFinite(Number(story.estimate)) ? Number(story.estimate) : 1,
+        status: story.status || 'backlog',
+        ownerId: story.ownerId ?? currentUser.value?.id ?? null,
+        tasks,
+        deletedAt: new Date().toISOString(),
+      },
+      ...deletedStoriesBin.value,
+    ].slice(0, MAX_DELETED_STORIES)
   }
   
   const resetErrors = () => {
@@ -1083,11 +1142,47 @@ export const useAppController = () => {
   
   const removeStory = async (storyId) => {
     if (!currentUser.value) return
+    const story = stories.value.find((item) => Number(item.id) === Number(storyId))
     try {
       await deleteStoryApi(storyId, currentUser.value.id)
+      rememberDeletedStory(story)
+      infoMessage.value = 'История удалена и добавлена в корзину.'
       await loadStories()
     } catch (error) {
       boardError.value = error.message || 'Не удалось удалить историю.'
+    }
+  }
+
+  const restoreDeletedStory = async (binId) => {
+    if (!currentUser.value || !currentProject.value) return
+    const deletedStory = deletedStoriesBin.value.find((entry) => entry.binId === binId)
+    if (!deletedStory) return
+
+    boardError.value = ''
+    try {
+      const restored = await createStory({
+        title: deletedStory.title,
+        estimate: Number.isFinite(Number(deletedStory.estimate))
+          ? Number(deletedStory.estimate)
+          : 1,
+        status: deletedStory.status || 'backlog',
+        ownerId: deletedStory.ownerId || currentUser.value.id,
+        projectId: deletedStory.projectId || currentProject.value,
+      })
+
+      if (Array.isArray(deletedStory.tasks) && deletedStory.tasks.length > 0) {
+        for (const task of deletedStory.tasks) {
+          const title = task?.title?.trim()
+          if (!title) continue
+          await addTaskApi(restored.id, title)
+        }
+      }
+
+      deletedStoriesBin.value = deletedStoriesBin.value.filter((entry) => entry.binId !== binId)
+      infoMessage.value = 'История восстановлена из корзины.'
+      await loadStories()
+    } catch (error) {
+      boardError.value = error.message || 'Не удалось восстановить историю.'
     }
   }
   
@@ -1247,6 +1342,8 @@ export const useAppController = () => {
     canArchiveStory,
     canViewAnalytics,
     canEditStory,
+    deletedStoriesBin,
+    deletedStoriesForCurrentProject,
     resetErrors,
     switchMode,
     handleRegister,
@@ -1275,6 +1372,7 @@ export const useAppController = () => {
     cancelEditingTaskTitle,
     saveTaskTitle,
     removeStory,
+    restoreDeletedStory,
     archiveStory,
     archiveDoneStories,
     removeArchivedStory,
